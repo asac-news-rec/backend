@@ -1,0 +1,17 @@
+# Local environments and secrets
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+.DS_Store
+
+# Local models and generated artifacts
+.cache/
+output/
+catboost_info/
+
+# Study documents are not part of this repository import
+docs/
