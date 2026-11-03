@@ -4,7 +4,7 @@ Backend API: recommendation serving and event collection
 
 뉴스 추천 프로젝트의 backend 저장소입니다. 현재 포함된 코드는 `synthetic_news`에서 가져온
 기사·썸네일 생성, PostgreSQL 적재용 CLI입니다.
-HTTP 추천 서빙 API, 사용자 이벤트 수집 API, Docker/Kubernetes 배포 구성은 아직 포함되어 있지 않습니다.
+로컬 PostgreSQL용 Docker Compose는 저장소 루트에 있습니다. HTTP 추천 서빙 API, 사용자 이벤트 수집 API, 생성 Worker의 Docker/Kubernetes 배포 구성은 아직 포함되어 있지 않습니다.
 
 ## 포함 파일
 
@@ -17,34 +17,164 @@ HTTP 추천 서빙 API, 사용자 이벤트 수집 API, Docker/Kubernetes 배포
 | `publisher.csv` | 언론사 52개, 기사마다 무작위 선택 |
 | `.gitignore` | 모델 캐시·실행 결과·비밀정보 등 Git 제외 |
 
-## 실행 환경
+## 필요한 프로그램과 모델
 
-사용할 conda 환경을 활성화한 뒤 이 저장소의 루트에서 실행합니다.
-기존 로컬 검증 환경 이름은 `recommand`이며, 팀원은 자신의 환경을 사용해도 됩니다.
-Python 3.12가 기존 검증 기준입니다. conda 환경·인증정보·Ollama 모델은 Git에 포함하지 않습니다.
+| 구성 | 역할 | 준비 방법 |
+| --- | --- | --- |
+| Python 3.12 | 생성·이미지 처리·DB 적재 코드 실행 | conda 또는 venv 환경 생성 후 의존성 설치 |
+| Ollama | 로컬 텍스트 모델을 실행하는 서버 | Ollama 설치 후 실행 |
+| Gemma 3 4B | 기사 본문과 영문 이미지 프롬프트 작성 | `ollama pull gemma3:4b` |
+| SDXL | 이미지 프롬프트를 받아 썸네일 생성 | 첫 이미지 생성 시 코드가 모델 가중치 다운로드 |
+| Diffusers·PyTorch | Python 안에서 SDXL 실행 | `requirements_thumbnail.txt`로 설치 |
+| PostgreSQL | 생성된 기사를 DB에 적재할 때 사용 | 루트의 Docker Compose 또는 별도 PostgreSQL 서버 |
+
+**SDXL은 Stable Diffusion XL의 약자이며 Stable Diffusion 계열의 이미지 생성 모델입니다.**
+현재 사용하는 모델은 `stabilityai/stable-diffusion-xl-base-1.0`입니다.
+Stable Diffusion WebUI, AUTOMATIC1111, ComfyUI는 이 코드 실행에 필요하지 않습니다.
+Ollama도 SDXL을 실행하지 않습니다. SDXL은 생성 Python 프로세스에서 실행됩니다.
+
+```text
+생성 Python 코드
+  ├─ Ollama 서버 → Gemma → 기사 + 영문 이미지 프롬프트
+  └─ Diffusers + PyTorch → SDXL → PNG 이미지
+                                   ↓
+                      날짜별 JSONL + images 폴더
+                                   ↓ 별도 load_postgres 실행
+                               PostgreSQL
+```
+
+## 최초 설치: macOS 로컬 기준
+
+### 1. Python 환경과 라이브러리
+
+아래 경로는 현재 프로젝트 위치입니다. 다른 PC에서는 내려받은 프로젝트 경로로 변경하세요.
+
+```bash
+cd /Users/taewonkim/Documents/final_project/backend/generate
+
+# 새 환경이 필요한 경우 한 번만 생성
+conda create -n recommand python=3.12
+conda activate recommand
+
+python -m pip install -r requirements_thumbnail.txt
+```
+
+이미 `recommand` 환경을 사용 중이면 환경 생성은 생략하고 활성화·패키지 설치만 합니다.
+`python -m pip`는 현재 선택한 Python 환경에 패키지를 설치합니다.
+Python 패키지 설치만으로 Ollama 프로그램이나 Gemma 모델까지 설치되지는 않습니다.
+
+### 2. Ollama 설치·실행과 Gemma 다운로드
+
+[Ollama 공식 다운로드](https://ollama.com/download)에서 macOS용 앱을 설치하고 실행합니다.
+새 터미널에서 아래 명령을 실행합니다.
+
+```bash
+ollama --version
+ollama pull gemma3:4b
+ollama list
+```
+
+`pull`은 Gemma 모델을 내려받는 명령이며, `list` 결과에 `gemma3:4b`가 표시되면 준비된 것입니다.
+Ollama 앱이 서버를 실행 중이면 별도 서버 실행은 필요 없습니다.
+앱을 사용하지 않고 터미널에서 서버를 실행하려면 별도 터미널에서 다음 명령을 실행한 채 유지합니다.
+
+```bash
+ollama serve
+```
+
+이미 서버가 실행 중일 때 다시 실행하면 포트 사용 중 오류가 날 수 있습니다.
+기본 접속 주소는 `http://localhost:11434`입니다.
+
+### 3. 기사와 이미지 한 건 생성
 
 ```bash
 conda activate recommand
 cd /Users/taewonkim/Documents/final_project/backend/generate
+python -m generate_with_thumbnail --count 1 --model gemma3:4b
 ```
 
-## 기사·썸네일 생성
+첫 실행에서는 기사와 이미지 프롬프트를 작성한 후 SDXL 모델 파일을 Hugging Face에서 다운로드합니다.
+이 과정에는 인터넷과 여러 GB의 저장 공간이 필요하며, 다운로드·모델 로드에 시간이 걸릴 수 있습니다.
+별도로 SDXL 설치 명령을 실행할 필요는 없습니다. 첫 실행이 끝나면 출력 폴더의 JSONL과 PNG를 확인합니다.
+
+```text
+output_with_thumbnail/
+  YYYY-MM-DD/
+    articles-000001.jsonl
+    images/
+      thumbnail-000001-000001.png
+```
+
+이 명령은 파일 생성까지만 수행합니다. DB 적재와 GCS 업로드를 자동으로 수행하지 않습니다.
+DB 적재 방법은 아래 PostgreSQL 적재 절과 [루트 README](../README.md)를 참고하세요.
+
+## 모델 캐시·인터넷·실행 장치
+
+모델 가중치는 모델이 학습한 결과를 담은 대용량 파일입니다. 캐시는 이를 보관해 다음 실행에서 다시 사용하는 저장 공간입니다.
+
+| 대상 | 보관 위치·사용 방식 |
+| --- | --- |
+| Gemma 등 Ollama 모델 | Ollama가 관리하는 모델 저장소. 설치 여부는 `ollama list`로 확인 |
+| SDXL | 코드에서 지정한 `generate/.cache/huggingface/` |
+| 생성 결과 | `generate/output_with_thumbnail/`의 JSONL과 이미지 |
+
+모델 캐시는 Git으로 전달되지 않습니다. 새 PC에서는 모델을 다시 다운로드해야 합니다.
+캐시가 있으면 해당 가중치를 재사용하지만, 새 프로세스는 모델을 메모리에 다시 로드합니다.
+실행 장치를 바꾸면 필요한 가중치 파일이 달라 추가 다운로드가 필요할 수 있습니다.
+
+패키지·모델을 모두 준비하고 Ollama가 로컬에서 실행 중이면 로컬 모델로 생성할 수 있습니다.
+SDXL의 Hugging Face 접속을 막고 준비된 캐시만 사용하려면 다음처럼 실행합니다. 필요한 파일이 없으면 실패합니다.
 
 ```bash
-python -m pip install -r requirements_thumbnail.txt
+HF_HUB_OFFLINE=1 python -m generate_with_thumbnail --count 1 --model gemma3:4b
+```
 
-# Ollama 서버가 실행 중이어야 합니다. 모델이 없다면 먼저 받습니다.
-ollama pull gemma3:4b
+`--device auto`가 기본이며 NVIDIA CUDA → Apple MPS → CPU 순으로 사용 가능한 장치를 선택합니다.
+Mac Apple Silicon에서는 MPS를 사용합니다. CPU 실행도 가능하지만 이미지 생성이 오래 걸릴 수 있습니다.
+Ollama와 SDXL이 메모리를 많이 사용하므로 처음에는 한 건으로 확인하고 다른 작업의 메모리 사용량도 고려하세요.
+일반 Linux Docker 컨테이너가 Mac의 MPS를 그대로 사용하는 구조는 아니므로, 현재 macOS 안내는 호스트에서 직접 실행하는 기준입니다.
 
-# 기본 텍스트 모델 gemma3:4b, 이미지 모델 SDXL 1.0
-python generate_with_thumbnail.py --count 20
+```bash
+# Apple Silicon GPU를 명시적으로 사용
+python -m generate_with_thumbnail --count 1 --device mps
 
-# 텍스트 모델을 직접 지정
-python generate_with_thumbnail.py --model qwen3.5:9b --count 1
+# CPU를 명시적으로 사용
+python -m generate_with_thumbnail --count 1 --device cpu
+```
+
+## 기사·썸네일 생성 옵션
+
+```bash
+# 지정 건수 생성. --count:50이 아니라 --count 50
+python -m generate_with_thumbnail --count 50 --model gemma3:4b
+
+# 다른 텍스트 모델을 쓰려면 먼저 다운로드
+ollama pull qwen3.5:9b
+python -m generate_with_thumbnail --model qwen3.5:9b --count 1
 
 # 기존 기사에 이미지만 생성: 원본 유지, 날짜 폴더에 다음 번호 파일 생성
-python generate_with_thumbnail.py --input /path/to/articles.jsonl
+python -m generate_with_thumbnail --input /path/to/articles.jsonl
+
+# 다른 주소의 Ollama 서버 사용
+python -m generate_with_thumbnail --count 1 --base-url http://localhost:11434
 ```
+
+`--input`도 영문 이미지 프롬프트 작성에 텍스트 모델을 사용하므로 Ollama 또는 선택한 API 모델이 필요합니다.
+Haiku를 선택하면 Ollama 대신 Anthropic API로 텍스트를 생성합니다. SDXL은 여전히 로컬 Python에서 실행됩니다.
+`ANTHROPIC_API_KEY` 환경변수와 인터넷 접속이 필요하며 API 요금이 발생할 수 있습니다.
+생성 프로그램은 루트 `.env`를 자동으로 읽지 않습니다. `.env` 자동 읽기는 DB 적재 프로그램의 기능입니다.
+
+### 자주 만나는 오류
+
+| 증상 | 확인할 내용 |
+| --- | --- |
+| `ollama: command not found` | Ollama 설치 및 새 터미널에서 명령 인식 여부 |
+| Ollama 접속 거부 | Ollama 앱 또는 `ollama serve` 실행 여부, 서버 주소 |
+| 모델을 찾지 못함 | `ollama list` 확인 후 지정한 이름으로 `ollama pull` |
+| SDXL 다운로드 실패 | 인터넷 연결·디스크 여유·캐시 파일 다운로드 상태 |
+| 메모리 부족 | 다른 무거운 작업 종료 후 한 건 실행. CPU는 느리고 RAM도 필요 |
+| `token repeat limit reached` | 텍스트 모델의 반복 출력으로 생성 중단. 아래 재시도 정책 참고 |
+| PostgreSQL 접속 거부 | DB 서버 실행 여부와 루트 `.env`의 호스트·포트 확인 |
 
 - 기사 JSON 형식 오류(필수 tags 누락 등)와 Ollama의 `token repeat limit reached` 생성 중단은 단계별 기본 3회까지 재시도합니다.
   `--max-attempts 5 --retry-delay 2`로 변경할 수 있습니다. 대기 시간은 재시도마다 2배 증가하며 최대 30초입니다.
@@ -66,8 +196,7 @@ python generate_with_thumbnail.py --input /path/to/articles.jsonl
 - 이미지 모델은 `stabilityai/stable-diffusion-xl-base-1.0`입니다. 충분한 RAM/GPU 메모리가 필요합니다.
 - CUDA/MPS는 float16, CPU는 float32를 사용하며 `--device auto|cuda|mps|cpu`로 지정합니다.
 - 1024×576에서 생성 후 640×360 PNG로 저장합니다. HTML은 생성하지 않습니다.
-- 모델 캐시는 코드에서 저장소 내부 `.cache/huggingface`로 지정합니다. 기존 SDXL 캐시를 이 경로로 복사했으므로
-  동일 모델·가중치는 재다운로드 없이 재사용합니다. Xet 비활성화 설정도 코드에 들어 있습니다.
+- 모델 캐시는 코드에서 `generate/.cache/huggingface`로 지정합니다. 필요한 파일이 이미 있으면 재사용합니다. Xet 비활성화 설정도 코드에 들어 있습니다.
 - `image_path`는 JSONL 기준 로컬 상대 경로입니다. 공개 웹 URL이 아닙니다.
 - JSONL에 `image_caption`과 `is_synthetic` 표시를 유지하며 `generation`, `thumbnail`, `thumb`는 제외합니다.
 - 이미지 실패 시 콘솔 오류와 `image_path=null`을 확인합니다. 자동 재개 기능은 없습니다.
@@ -256,3 +385,9 @@ Ollama 컨테이너
 하나의 backend repo에서 웹 API와 Worker 코드를 관리하더라도 컨테이너는 각각 실행할 수 있습니다.
 repo 개수와 컨테이너 개수를 일치시킬 필요는 없습니다. 현재 생성·적재 CLI는 우선 Worker로
 컨테이너화하고, 웹 API는 별도 실행 프로세스로 추가하는 구성이 자연스럽습니다.
+
+## 공식 참고 자료
+
+- [Ollama 설치](https://ollama.com/download)
+- [Gemma 3 모델 목록](https://ollama.com/library/gemma3)
+- [SDXL Base 1.0 모델 설명](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0)
