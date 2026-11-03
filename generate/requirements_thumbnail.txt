@@ -1,0 +1,19 @@
+# 기사·이미지 생성
+langchain-anthropic>=0.3.15,<2
+langchain-core>=0.3.65,<2
+pydantic>=2.7,<3
+langchain-ollama>=0.3.4,<2
+
+# SDXL 실행용 검증 버전 조합
+diffusers==0.37.0
+transformers==4.57.6
+huggingface-hub==0.36.2
+accelerate>=1.0,<2
+torch>=2.5
+pillow>=10
+safetensors>=0.4
+sentencepiece>=0.2
+
+# PostgreSQL 적재
+psycopg[binary]>=3.2,<4
+python-dotenv>=1,<2

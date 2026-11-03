@@ -3,7 +3,7 @@
 Backend API: recommendation serving and event collection
 
 뉴스 추천 프로젝트의 backend 저장소입니다. 현재 포함된 코드는 `synthetic_news`에서 가져온
-기사·썸네일 생성, PostgreSQL 적재, CatBoost 추천 학습용 CLI입니다.
+기사·썸네일 생성, PostgreSQL 적재용 CLI입니다.
 HTTP 추천 서빙 API, 사용자 이벤트 수집 API, Docker/Kubernetes 배포 구성은 아직 포함되어 있지 않습니다.
 
 ## 포함 파일
@@ -12,14 +12,9 @@ HTTP 추천 서빙 API, 사용자 이벤트 수집 API, Docker/Kubernetes 배포
 | --- | --- |
 | `generate_with_thumbnail.py` | Gemma/Ollama 또는 Haiku로 기사·영문 이미지 프롬프트 생성, SDXL로 실사풍 PNG 생성 |
 | `load_postgres.py` | 기사 JSONL 검증 및 PostgreSQL upsert |
-| `train_recommender.py` | 클릭 예측 학습·시간 분리 평가·사용자별 추천 생성 |
+| `requirements_thumbnail.txt` | 기사·이미지 생성 및 PostgreSQL 적재 의존성 |
 | `news_category.csv` | 기사 대분류·중분류 |
 | `publisher.csv` | 언론사 52개, 기사마다 무작위 선택 |
-| `recommendation_sample.csv` | 추천 학습 기본 입력. 사용자 5명·노출 100건의 합성 샘플 |
-| `requirements.txt` | 기사 작성용 공통 의존성 |
-| `requirements-thumbnail.txt` | 공통 의존성과 SDXL 실행 패키지 |
-| `requirements-postgres.txt` | DB 적재 패키지 |
-| `requirements-recommendation.txt` | CatBoost 학습 패키지 |
 | `.gitignore` | 모델 캐시·실행 결과·비밀정보 등 Git 제외 |
 
 ## 실행 환경
@@ -30,13 +25,13 @@ Python 3.12가 기존 검증 기준입니다. conda 환경·인증정보·Ollama
 
 ```bash
 conda activate recommand
-cd /path/to/backend
+cd /Users/taewonkim/Documents/final_project/backend/generate
 ```
 
 ## 기사·썸네일 생성
 
 ```bash
-python -m pip install -r requirements-thumbnail.txt
+python -m pip install -r requirements_thumbnail.txt
 
 # Ollama 서버가 실행 중이어야 합니다. 모델이 없다면 먼저 받습니다.
 ollama pull gemma3:4b
@@ -47,15 +42,26 @@ python generate_with_thumbnail.py --count 20
 # 텍스트 모델을 직접 지정
 python generate_with_thumbnail.py --model qwen3.5:9b --count 1
 
-# 기존 기사에 이미지만 생성: 입력 전체 행 처리, 새 출력 폴더 생성
+# 기존 기사에 이미지만 생성: 원본 유지, 날짜 폴더에 다음 번호 파일 생성
 python generate_with_thumbnail.py --input /path/to/articles.jsonl
 ```
+
+- 기사 JSON 형식 오류(필수 tags 누락 등)와 Ollama의 `token repeat limit reached` 생성 중단은 단계별 기본 3회까지 재시도합니다.
+  `--max-attempts 5 --retry-delay 2`로 변경할 수 있습니다. 대기 시간은 재시도마다 2배 증가하며 최대 30초입니다.
+- 재시도 소진 시 해당 기사 슬롯을 건너뛰고 다음 기사로 진행합니다. 이미지 묘사 실패 시 기사는 보존하고 해당 이미지만 건너뜁니다.
+- `--count`는 생성 슬롯 수이므로 실패가 있으면 저장 기사 수가 적을 수 있습니다. 성공한 기사의 이미지는 계속 생성합니다.
+- 재시도 대상 생성 오류는 날짜 폴더의 `generation_errors-번호.jsonl`에 기록합니다. 최종 미해결 실패가 있으면 결과를 보존하고 종료 코드 1로 종료합니다.
+- 인증·접속 오류나 디스크 저장 실패 등은 위 생성 오류 재시도의 대상이 아닙니다. JSONL의 기존 필드·형식은 유지합니다.
 
 - 텍스트 모델: `gemma3:4b`(기본), `qwen3.5:9b`, `exaone3.5:7.8b`, `haiku`.
 - Haiku는 `ANTHROPIC_API_KEY` 환경변수가 필요하며 API 요금이 발생할 수 있습니다.
 - Ollama 주소는 `--base-url` 또는 `OLLAMA_BASE_URL`, 기본 `http://localhost:11434`입니다.
 - 분류 제한: `--category`, `--subcategory`. 기준일: `--date YYYY-MM-DD`.
-- 출력은 `output_with_thumbnail/run-실행시각-식별자/articles.jsonl`과 `images/*.png`입니다.
+- 날짜마다 `output_with_thumbnail/YYYY-MM-DD/` 폴더 하나를 사용합니다. 기본은 실행 시작일(한국 시간), `--date` 지정 시 그 날짜입니다. 실행 도중 자정이 지나도 해당 실행은 시작 날짜를 유지합니다.
+- 같은 날짜에 실행할 때마다 `articles-000001.jsonl`, `articles-000002.jsonl`처럼 다음 번호의 새 파일을 만듭니다. 기존 JSONL에 이어 쓰거나 덮어쓰지 않습니다.
+- 이미지도 `images/thumbnail-000001-000001.png`(파일 번호-기사 순번)처럼 번호를 붙입니다. 기사 `id`는 기존 UUID 생성 방식을 유지합니다.
+- 오류 기록은 `generation_errors-000001.jsonl`처럼 해당 실행 파일 번호를 사용합니다.
+- `--input` 이미지 재생성도 다음 번호의 새 JSONL·이미지에 저장합니다. 원본 JSONL과 기사 ID는 유지합니다.
 - 기사와 이미지 묘사를 먼저 작성하고, SDXL을 로드해 이미지들을 순차 생성합니다.
 - 이미지 모델은 `stabilityai/stable-diffusion-xl-base-1.0`입니다. 충분한 RAM/GPU 메모리가 필요합니다.
 - CUDA/MPS는 float16, CPU는 float32를 사용하며 `--device auto|cuda|mps|cpu`로 지정합니다.
@@ -72,9 +78,16 @@ python generate_with_thumbnail.py --input /path/to/articles.jsonl
 ## PostgreSQL 적재
 
 ```bash
-python -m pip install -r requirements-postgres.txt
+python -m pip install -r requirements_thumbnail.txt
 
-# DB에 쓰지 않고 입력만 확인
+# 날짜별 전체 JSONL 검증(DB 쓰기 없음)
+python -m load_postgres --date 2026-11-02 --validate-only
+
+# 날짜별 전체 적재
+python -m load_postgres --date 2026-11-02 \
+  --host localhost --port 5433 --dbname newsdb --user recommend
+
+# 파일 하나만 지정하는 기존 방식도 사용 가능
 python load_postgres.py --input /path/to/articles.jsonl --validate-only
 
 # PostgreSQL 서버와 DB·계정은 별도 준비
@@ -82,78 +95,59 @@ python load_postgres.py --input /path/to/articles.jsonl \
   --host localhost --port 5433 --dbname newsdb --user recommend
 ```
 
-비밀번호는 `PGPASSWORD` 또는 `~/.pgpass`로 전달하며 코드·Git에 저장하지 않습니다.
+`--date`는 파일 저장 폴더의 날짜를 선택합니다(기사 published_at 필터가 아님). 새 날짜 폴더의 `articles-*.jsonl`을 번호순으로 읽습니다. 오류 로그·임시 파일은 제외합니다. 기존 `run-YYYYMMDD-.../articles.jsonl`도 해당 날짜와 일치하면 먼저 읽으며, 기존 폴더를 이동하거나 수정하지 않습니다.
+같은 기사 ID가 여러 파일에 있으면 나중에 읽은 파일의 값을 사용해 한 번 upsert합니다. 재생성 이미지 결과를 뒤 번호로 저장했다면 그 결과가 우선합니다. 파일 번호는 데이터 최신성의 절대 보장이 아니므로 오래된 입력을 뒤 번호로 재저장할 때 주의하세요.
+생성 중인 새 형식 파일은 적재하지 않고 오류를 냅니다. 생성이 끝난 뒤 실행하세요. 실패로 남은 빈 기사 파일은 건너뛰며, 선택한 파일 중 잘못된 JSON·필수값 오류가 있으면 DB에 쓰기 전에 중단합니다.
+
+프로젝트 루트 backend/.env를 자동으로 읽습니다. 별도 source 명령 없이 실행하면 됩니다.
+설정 우선순위는 CLI 옵션 > 기존 환경변수 > .env > 기본값입니다.
+비밀번호는 .env·환경변수의 `PGPASSWORD` 또는 `~/.pgpass`로 전달하며 코드·Git에 저장하지 않습니다.
 접속 설정에는 `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`도 사용할 수 있습니다.
-`public.news_articles`를 생성하고 동일한 `id`는 갱신하며, 한 트랜잭션으로 적재합니다.
+적재 실행은 한 트랜잭션에서 아래 테이블을 준비하고 기사만 upsert합니다.
 
-현재 적재기는 기존 `generation` 컬럼과 `raw_article` 내부의 같은 키를 제거하는 구문도 실행합니다.
-실제 서비스 DB에 적용하기 전에 스키마 변경 정책과 실행 권한을 확인해야 합니다.
+| 테이블 | 생성 컬럼·키 |
+|---|---|
+| public.news_articles | 기존 기사 19개 컬럼, id 기본키 |
+| public.article_likes | user_id·article_id 복합 기본키, liked_at |
+| public.article_like_history | change_id UUID 기본키, user_id, article_id, action, changed_at |
 
-현재 DB의 이미지 컬럼은 `image_url`입니다. 생성기의 `image_path`를 자동으로 웹 주소로 바꾸지 않습니다.
-Cloud Storage 등 이미지 저장소 업로드 및 `image_url` 연결은 후속 구현 대상입니다.
+좋아요 두 테이블의 article_id는 news_articles(id)를 참조합니다. history.action은 like/unlike만 허용합니다.
+기사 재적재는 현재 좋아요와 변경 이력을 수정하지 않습니다. 이 적재 CLI는 좋아요 행을 생성하지 않으며,
+실제 상태 변경과 이력 추가를 같은 트랜잭션으로 수행하는 것은 향후 뉴스 API의 책임입니다.
+같은 상태 요청에 이력을 추가하지 않는 동작 역시 API에서 구현해야 합니다.
+--validate-only는 DB 접속·테이블 생성을 수행하지 않습니다.
+CREATE TABLE IF NOT EXISTS는 이미 있는 테이블의 정의를 자동 변경하지 않습니다. 기존 스키마가 다르면 별도 변경 SQL이 필요합니다.
 
-## CatBoost 추천 학습
+기존 DB의 컬럼을 삭제하거나 기존 raw_article을 일괄 정리하는 구문은 적재 경로에서 제거했습니다.
 
-### 재생성 가능한 개발용 예제
+### 로컬 이미지 URL 자동 변환
 
-`generate_recommendation_sample.py`는 외부 API 없이 사용자 10명, 가상 기사 40개,
-추천 요청 200회(요청당 5개 노출)의 합성 데이터 1,000행을 만듭니다.
-기존 `recommendation_sample.csv`와 기존 학습 결과는 유지합니다.
-
-```bash
-conda activate recommand
-python -m pip install -r requirements-recommendation.txt
-python generate_recommendation_sample.py
-python train_recommender.py --input sample_data/impressions.csv --output-dir sample_data/results
-```
-
-첫 스크립트는 `sample_data/impressions.csv`를 생성하고, 두 번째는 CatBoost로
-클릭 확률을 학습한 뒤 이미 클릭한 기사를 제외해 사용자별 상위 10개를 저장합니다.
-`--requests 1000 --seed 42`로 노출 5,000건을 재생성할 수 있습니다.
-
-| 컬럼 | 의미 |
-| --- | --- |
-| `user_id`, `article_id`, `request_id` | 사용자·기사·추천 요청 식별자 |
-| `impression_time`, `label_window_end` | 노출 시각과 30분 클릭 관찰 종료 시각 |
-| `category`, `publisher`, `device` | 기사 분류·가상 언론사·기기 |
-| `user_clicks_7d` | 이전 7일간 관찰이 끝난 노출의 클릭 수 |
-| `user_category_click_share_7d` | 이전 7일 클릭 중 해당 분류 비중 |
-| `article_impressions_24h`, `article_clicks_24h`, `article_ctr_24h` | 이전 24시간 관찰이 끝난 노출·클릭·클릭률 |
-| `clicked` | 학습 정답. 관찰 시간 내 클릭 1, 미클릭 0 |
-| `is_synthetic` | 합성 데이터 표시 |
-
-피처는 현재 요청 이전의 관찰 완료 이력으로만 계산합니다. 학습은 시간순 750건,
-평가는 이후 250건이며 이후 전체 데이터로 최종 모델을 학습합니다(기본 생성 옵션 기준).
-정답은 가상의 분류 선호도로 확률적으로 생성하며 실제 행동 데이터가 아닙니다.
-실제 로그에서는 노출과 클릭을 연결하고 관찰 시간이 끝난 노출에만 미클릭 0을 부여해야 합니다.
-노출되지 않은 기사를 미클릭으로 간주하지 않습니다.
-이 예제는 클릭 예측과 후보 정렬을 보여주며 실제 서비스 추천 품질을 보장하지 않습니다.
+적재기는 image_url이 없는 기사에 대해 JSONL 위치 + 상대 image_path를 계산한 뒤, --output-root 기준 경로를 이미지 기본 URL에 붙입니다. JSONL 원본과 raw_article은 변경하지 않고 DB의 image_url 컬럼만 변환합니다. 기존 image_url이 있으면 그 값을 유지하고, image_path도 없으면 NULL로 저장합니다.
 
 ```bash
-python -m pip install -r requirements-recommendation.txt
-python train_recommender.py
+# 별도 터미널: output_with_thumbnail을 이미지 공개 루트로 제공
+python -m http.server 8001 --bind 127.0.0.1 --directory output_with_thumbnail
 
-# 별도 데이터·결과 위치·추천 개수 지정
-python train_recommender.py --input /path/to/impressions.csv \
-  --output-dir /path/to/results --top-k 10
+# URL 확인만 수행(DB 변경 없음)
+python -m load_postgres --date 2026-11-02 --validate-only
+
+# 기본 URL을 명시해 DB 적재
+python -m load_postgres --date 2026-11-02 --image-base-url http://localhost:8001
+
+# 환경변수로 설정해도 됨(CLI 옵션이 우선)
+export IMAGE_BASE_URL=http://localhost:8001
 ```
 
-기본 샘플은 100건이며, 시간 순서로 앞선 75건을 학습하고 이후 25건을 평가합니다.
-평가 후 전체 100건으로 최종 모델을 다시 학습합니다. 입력을 바꾸면 분할 건수도 달라집니다.
-추천 기준 시각은 샘플의 마지막 label 관찰 종료 시각 다음 1초이며, 실제 현재 시각이 아닙니다.
-후보는 입력 CSV에 등장하는 기사이며, 사용자별 기존 클릭 기사를 제외합니다.
-사용자 ID·기사 ID·제목·`clicked`는 이 초기 모델의 입력 feature가 아닙니다.
+기본값은 http://localhost:8001입니다. 예를 들어 2026-11-02/articles-000001.jsonl의 image_path가 images/thumbnail-000001-000001.png이면 http://localhost:8001/2026-11-02/images/thumbnail-000001-000001.png가 됩니다. 기존 run-... 폴더도 실제 경로를 유지해 URL을 만듭니다. 공백·한글 등은 URL 인코딩합니다.
 
-결과는 기본 `recommendation_results/`에 저장합니다. 현재 생성된 샘플 결과도 이 저장소에 포함할 수 있도록 복사했습니다.
+입력 JSONL이 기본 출력 루트 밖에 있으면 --output-root로 이미지 HTTP 제공 루트를 지정하세요. 루트 밖을 가리키는 image_path는 오류 처리합니다. localhost 주소는 같은 PC 브라우저에서 확인할 때 사용하는 주소입니다.
 
-- `top10_by_user.csv`: 사용자별 추천과 예측 확률
-- `candidate_scores.csv`: 모든 후보·feature·점수
-- `holdout_predictions.csv`: 시간 분리 평가 결과
-- `metrics.json`: 평가 지표·설정·추천 기준 시각
-- `catboost_click_model.cbm`: 전체 데이터로 학습한 모델
+GCS 이전 시 같은 상대 경로로 이미지를 먼저 업로드하고 --image-base-url을 https://storage.googleapis.com/버킷이름/접두경로 등으로 바꿀 수 있습니다. 이 옵션은 URL 문자열만 구성하며 업로드·공개 권한 설정은 하지 않습니다. 비공개 버킷의 만료되는 서명 URL은 별도 설계가 필요합니다. 기존 image_url은 자동 교체하지 않으므로 이미 로컬 image_url을 넣은 입력 JSON을 GCS 주소로 바꿀 경우 명시적인 데이터 갱신이 필요합니다.
 
-합성 샘플은 실행 흐름 검증용이며 실제 사용자 추천 품질을 입증하지 않습니다.
-실제 API 서빙과 사용자 행동 수집은 별도로 구현해야 합니다.
+## 추천 학습 샘플
+
+추천 학습 코드는 별도 `../../recommendation_sample/` 폴더의 README.md를 참고하세요.
+이 폴더의 통합 의존성에는 CatBoost·pandas 등 추천 학습 전용 패키지를 포함하지 않습니다.
 
 ## 이번 반영에서 제외한 항목
 
@@ -170,9 +164,9 @@ python train_recommender.py --input /path/to/impressions.csv \
 사용자 요청으로 기존 결과도 복사했습니다. 원본은 유지합니다.
 
 - `output_with_thumbnail/run-20261030-170636-8ab062/`: 기사 20건과 SDXL PNG 20개
-- `recommendation_results/`: 사용자별 Top 10, 전체 후보·평가 예측, 지표, CatBoost 학습 모델
+- 추천 학습 결과는 `../../recommendation_sample/recommendation_results/`로 이동했습니다.
 
-이 두 폴더는 현재 `.gitignore`에서 제외하지 않으므로 Git에 추가할 수 있습니다.
+추천 샘플 자료는 backend 바깥의 recommendation_sample 폴더에서 관리합니다.
 `.DS_Store`는 복사하지 않았습니다. 커밋·push는 별도로 수행합니다.
 
 프로젝트 `.cache/huggingface`는 SDXL 이미지 모델의 다운로드 캐시입니다.

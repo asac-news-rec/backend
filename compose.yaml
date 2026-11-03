@@ -1,0 +1,26 @@
+name: asac-news-backend
+
+services:
+  postgres:
+    image: postgres:18
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${PGPORT:-5433}:5432"
+    environment:
+      POSTGRES_DB: ${PGDATABASE:-newsdb}
+      POSTGRES_USER: ${PGUSER:-recommend}
+      POSTGRES_PASSWORD: ${PGPASSWORD:?Set PGPASSWORD in .env}
+    volumes:
+      # PostgreSQL 18 데이터 경로: /var/lib/postgresql/18/docker
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    stop_grace_period: 30s
+
+volumes:
+  postgres-data:
+    name: asac-news-backend-postgres-data
