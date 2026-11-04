@@ -20,6 +20,61 @@ services:
       retries: 12
       start_period: 10s
     stop_grace_period: 30s
+  api:
+    build: .     # build : 현재 backend의 Dockerfile로 이미지 생성
+    restart: unless-stopped
+
+    ports:    # PC의 127.0.0.1:8000을 API 컨테이너의 8000에 연결. 실제 pc에서 was로 접근할 일은 없음(테스트용)
+      - "127.0.0.1:8000:8000"
+    # environment : 이 컨테이너에서 실행되는 프로그램에 전달할 설정값
+    # config.py에서 PGHOST, PGUSER, PGPASSWORD 등을 읽도록 작성
+    environment:
+      PGHOST: postgres    # DB 컨테이너를 Compose 서비스 이름으로 찾음
+      PGPORT: "5432"
+      PGDATABASE: ${PGDATABASE:-newsdb}
+      PGUSER: ${PGUSER:-recommend}
+      # PGPASSWORD 값이 있으면 사용하고, 없거나 빈 값이면 오류를 내라는 Compose 문법
+      # ${PGPASSWORD...}	PGPASSWORD 환경변수 값 참조,
+      #     :?	값이 없거나 비어 있으면 오류 발생
+      # Set PGPASSWORD in .env	오류가 났을 때 보여줄 메시지
+      PGPASSWORD: ${PGPASSWORD:?Set PGPASSWORD in .env}
+    # depends_on : 서비스 간 시작 순서와 시작 조건을 지정하는 설정
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # 컨테이너 안의 서비스가 정상적으로 동작하는지 주기적으로 검사하는 설정
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import requests; requests.get('http://127.0.0.1:8000/health', timeout=3).raise_for_status()"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+  nginx:
+    image: nginx:stable-alpine
+    restart: unless-stopped
+
+    ports:
+      - "127.0.0.1:8080:80"
+    volumes:
+      # PC 경로 : 컨테이너 경로 : 접근 방식 -> 읽기 전용(read-only)
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./generate/output_with_thumbnail:/srv/images:ro
+      - ./web:/usr/share/nginx/html:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    # nginx:
+    # depends_on:
+    #   api:
+    #     condition: service_healthy
+    #   api 시작
+    #     → api에 정의된 healthcheck 실행
+    #     → 검사 성공으로 healthy 상태가 됨
+    #     → nginx 시작
 
 volumes:
   postgres-data:

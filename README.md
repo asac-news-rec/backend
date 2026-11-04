@@ -28,9 +28,7 @@ API 문서: http://127.0.0.1:8000/docs
 
 | 파일 | 역할 |
 |---|---|
-| `requirements.txt` | WAS와 생성용 requirements를 함께 설치하는 진입점 |
-| `app/requirements.txt` | WAS 직접 의존성 및 현재 환경 버전 |
-| `generate/requirements_thumbnail.txt` | 생성·이미지·적재 직접 의존성 및 현재 환경 버전 |
+| `requirements.txt` | WAS·기사·이미지 생성·DB 적재의 통합 직접 의존성 |
 | `generate/recommand_env.yml` | 로컬 참고용 Conda 설정 (Git 제외) |
 | `generate/recommand_pip.txt` | 로컬 전체 설치 버전 스냅샷 (Git 제외) |
 
@@ -111,3 +109,5 @@ docker compose exec -T postgres sh -c \
   'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
   < migrations/20261104_reader_id.sql
 ```
+
+Dockerfile도 루트 `requirements.txt`를 설치합니다. 통합 구성에 따라 WAS 이미지에도 Torch·Diffusers 등 생성용 패키지가 함께 설치됩니다.

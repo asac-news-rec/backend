@@ -7,7 +7,8 @@ import psycopg
 from fastapi import FastAPI,HTTPException
 from .db import connect
 
-app = FastAPI()
+# root_path는 외부에서 /api 접두사를 통해 접근한다는 정보
+app = FastAPI(root_path="/api")
 
 # 뉴스조회 요청 json의 형식
 class FeedRequest(BaseModel):
@@ -50,11 +51,10 @@ def news_feed(body:FeedRequest):
             if has_more else None
         )
         return {
-            "reader_id": body.reader_id,
             "request_id":str(uuid7()),
             "served_at":datetime.now(timezone.utc).isoformat(),
             "items":items,
-            "next_offset":next_offset
+            "next_offset":next_offset,
         }
     except psycopg.Error as exc:
         raise HTTPException(

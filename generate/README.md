@@ -12,7 +12,7 @@ Backend API: recommendation serving and event collection
 | --- | --- |
 | `generate_with_thumbnail.py` | Gemma/Ollama 또는 Haiku로 기사·영문 이미지 프롬프트 생성, SDXL로 실사풍 PNG 생성 |
 | `load_postgres.py` | 기사 JSONL 검증 및 PostgreSQL upsert |
-| `requirements_thumbnail.txt` | 기사·이미지 생성 및 PostgreSQL 적재 의존성 |
+| `../requirements.txt` | 기사·이미지 생성 및 PostgreSQL 적재 의존성 |
 | `news_category.csv` | 기사 대분류·중분류 |
 | `publisher.csv` | 언론사 52개, 기사마다 무작위 선택 |
 | `.gitignore` | 모델 캐시·실행 결과·비밀정보 등 Git 제외 |
@@ -25,7 +25,7 @@ Backend API: recommendation serving and event collection
 | Ollama | 로컬 텍스트 모델을 실행하는 서버 | Ollama 설치 후 실행 |
 | Gemma 3 4B | 기사 본문과 영문 이미지 프롬프트 작성 | `ollama pull gemma3:4b` |
 | SDXL | 이미지 프롬프트를 받아 썸네일 생성 | 첫 이미지 생성 시 코드가 모델 가중치 다운로드 |
-| Diffusers·PyTorch | Python 안에서 SDXL 실행 | `requirements_thumbnail.txt`로 설치 |
+| Diffusers·PyTorch | Python 안에서 SDXL 실행 | `../requirements.txt`로 설치 |
 | PostgreSQL | 생성된 기사를 DB에 적재할 때 사용 | 루트의 Docker Compose 또는 별도 PostgreSQL 서버 |
 
 **SDXL은 Stable Diffusion XL의 약자이며 Stable Diffusion 계열의 이미지 생성 모델입니다.**
@@ -56,7 +56,7 @@ cd /Users/taewonkim/Documents/final_project/backend/generate
 conda create -n recommand314 python=3.14
 conda activate recommand314
 
-python -m pip install -r requirements_thumbnail.txt
+python -m pip install -r ../requirements.txt
 ```
 
 이미 `recommand314` 환경을 사용 중이면 환경 생성은 생략하고 활성화·패키지 설치만 합니다.
@@ -64,7 +64,7 @@ python -m pip install -r requirements_thumbnail.txt
 Python 패키지 설치만으로 Ollama 프로그램이나 Gemma 모델까지 설치되지는 않습니다.
 
 `recommand_env.yml`은 Python 3.14 Conda 환경 설정이며, 개인 PC 경로는 포함하지 않습니다.
-WAS까지 함께 설치하려면 backend 루트에서 `python -m pip install -r requirements.txt`를 실행합니다.
+위 설치는 WAS 패키지까지 함께 설치합니다. backend 루트에서는 `python -m pip install -r requirements.txt`를 실행합니다.
 `recommand_pip.txt`는 현재 환경의 전체 버전 스냅샷으로, 학습·분석·Jupyter 패키지까지 포함하므로 일반 실행에 전부 필요한 목록은 아닙니다.
 기존 환경에서 `python --version`으로 3.14인지 확인하세요. 환경 파일을 편집하는 것만으로 실행 중인 Python 버전이 바뀌지는 않습니다.
 
@@ -212,7 +212,7 @@ Haiku를 선택하면 Ollama 대신 Anthropic API로 텍스트를 생성합니�
 ## PostgreSQL 적재
 
 ```bash
-python -m pip install -r requirements_thumbnail.txt
+python -m pip install -r ../requirements.txt
 
 # 날짜별 전체 JSONL 검증(DB 쓰기 없음)
 python -m load_postgres --date 2026-11-02 --validate-only

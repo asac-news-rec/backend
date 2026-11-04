@@ -3,7 +3,8 @@
 
 # app폴더와 그 안의 파일은 포함
 !app/
-# !app/**
+# 통합 패키지 목록 포함
+!requirements.txt
 
 # app안의 캐시/환경설정 파일은 다시 제외
 **/__pycache__/

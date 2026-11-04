@@ -1,4 +1,30 @@
-# Python 3.14 / backend에서 실행: python -m pip install -r requirements.txt
-# WAS + 기사·이미지 생성·DB 적재의 직접 의존성
--r app/requirements.txt
--r generate/requirements_thumbnail.txt
+# Python 3.14 / recommand314 기준
+# backend에서 실행: python -m pip install -r requirements.txt
+# WAS + 기사·이미지 생성 + DB 적재의 통합 의존성
+
+# FastAPI WAS
+fastapi==0.162.0
+uvicorn==0.54.0
+pydantic==2.14.2
+requests>=2.32,<3
+
+# PostgreSQL 및 환경설정
+psycopg[binary]==3.3.7
+python-dotenv==1.2.4
+
+# 기사 생성
+langchain-anthropic==1.7.9
+langchain-core==1.7.4
+langchain-ollama==1.1.0
+ollama==0.6.3
+
+# SDXL — recommand314 설치 버전 기준
+# macOS import 검증 완료. Linux 컨테이너의 전체 설치·생성 검증은 별도.
+diffusers==0.42.1
+transformers==5.22.1
+huggingface-hub==2.4.0
+accelerate==1.15.0
+torch==2.15.0
+pillow==13.0.0
+safetensors==0.8.0
+sentencepiece==0.2.2
