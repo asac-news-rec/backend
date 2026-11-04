@@ -2,6 +2,49 @@
 
 `compose.yaml`로 PostgreSQL 18을 실행합니다. 기사·이미지 생성 및 적재 코드는 `generate/`에 있습니다.
 
+## Python 3.14 실행 환경
+
+WAS는 표준 라이브러리의 `uuid7()`을 사용하므로 Python 3.14를 기준으로 합니다.
+현재 확인한 환경은 `recommand314` / Python 3.14.10 / macOS arm64입니다.
+
+```bash
+cd /Users/taewonkim/Documents/final_project/backend
+
+# recommand314 환경이 없는 경우에만 생성
+conda create -n recommand314 python=3.14 pip
+conda activate recommand314
+python --version
+
+# WAS + 기사·이미지 생성·DB 적재 의존성 설치
+python -m pip install -r requirements.txt
+python -m pip check
+
+# WAS 실행 — backend 위치에서 실행
+python -m uvicorn app.main:app --reload
+```
+
+`python --version`은 `Python 3.14.x`여야 합니다. 기존 환경은 생성 단계를 생략하고 활성화합니다.
+API 문서: http://127.0.0.1:8000/docs
+
+| 파일 | 역할 |
+|---|---|
+| `requirements.txt` | WAS와 생성용 requirements를 함께 설치하는 진입점 |
+| `app/requirements.txt` | WAS 직접 의존성 및 현재 환경 버전 |
+| `generate/requirements_thumbnail.txt` | 생성·이미지·적재 직접 의존성 및 현재 환경 버전 |
+| `generate/recommand_env.yml` | 로컬 참고용 Conda 설정 (Git 제외) |
+| `generate/recommand_pip.txt` | 로컬 전체 설치 버전 스냅샷 (Git 제외) |
+
+로컬에 `generate/recommand_pip.txt`를 보관한 경우에만, 환경 생성·활성화 후 전체 스냅샷을 복원할 수 있습니다. 이 파일은 Git에 포함되지 않습니다.
+일반 프로젝트 실행에는 위의 `requirements.txt` 설치를 사용합니다.
+
+```bash
+python -m pip install -r generate/recommand_pip.txt
+```
+
+requirements는 Python 자체를 설치하지 않습니다. Conda 환경으로 Python을 먼저 선택합니다.
+고정 버전은 현재 로컬 설치 상태를 기록한 것입니다. 다른 OS에서의 설치, 새 환경 재설치,
+모델 다운로드와 기사·이미지 생성의 전체 실행 성공까지 보장하는 검증 결과는 아닙니다.
+
 ## 기사·이미지 생성 준비
 
 Ollama·Gemma·SDXL의 역할, 최초 설치, 모델 다운로드와 실행 방법은 [생성 프로그램 README](generate/README.md)를 참고하세요.
@@ -35,7 +78,7 @@ python -m load_postgres --date 2026-11-02
 
 load_postgres 실행 시 news_articles, article_likes, article_like_history 테이블을 준비하고 기사만 적재합니다.
 Compose 실행만으로 테이블·기사를 생성하지 않으며 init.sql은 중복 추가하지 않았습니다.
-좋아요 상태 변경·이력 기록은 향후 뉴스 API에서 같은 트랜잭션으로 처리해야 합니다.
+좋아요 상태 변경·이력 기록은 현재 FastAPI와 `app/repository.py`에서 같은 트랜잭션으로 처리합니다.
 
 ## 상태 확인·중지·다시 실행
 

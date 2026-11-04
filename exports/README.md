@@ -1,5 +1,33 @@
 # 기사 DB 백업 복원 안내
 
+## 2026-11-04 전체 DB 백업
+
+`newsdb_2026-11-04.dump`는 기사 250건과 현재 좋아요·변경 이력 테이블의 구조 및 데이터를 포함한 전체 프로젝트 DB 백업입니다. 기존 `news_articles.dump`는 이전 시점의 기사 전용 백업이므로 구분해서 사용합니다. 이미지 파일과 DB 접속 비밀번호는 이 백업에 포함하지 않습니다.
+
+아래 명령은 `.env` 설정과 PostgreSQL 실행을 마친 **테이블이 없는 빈 대상 DB**에서 사용합니다. 기존 테이블이 있는 DB에 덮어쓰는 명령이 아닙니다. 아래의 기사 전용 복원과 둘 중 하나만 선택하세요.
+
+```bash
+docker compose exec -T postgres sh -c \
+  'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner --no-privileges --exit-on-error --single-transaction' \
+  < exports/newsdb_2026-11-04.dump
+```
+
+오늘 생성 원본과 이미지는 `generate/output_with_thumbnail/2026-11-04/`에 있습니다. 백업의 이미지 URL은 로컬 `http://localhost:8001` 기준이므로, 프로젝트 루트에서 다음 명령으로 이미지를 제공합니다.
+
+```bash
+python -m http.server 8001 --bind 127.0.0.1 --directory generate/output_with_thumbnail
+```
+
+전체 백업 생성 명령(프로젝트 루트에서 실행):
+
+```bash
+docker compose exec -T postgres sh -c \
+  'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc --no-owner --no-privileges' \
+  > exports/newsdb_2026-11-04.dump
+```
+
+---
+
 `news_articles.dump`는 PostgreSQL의 `pg_dump`로 만든 백업 파일입니다.
 `public.news_articles` 테이블 구조와 백업 시점의 기사 데이터가 포함되어 있습니다.
 좋아요 테이블과 이미지 파일은 포함하지 않습니다. 이 파일을 읽을 때는 `psql`이 아니라 `pg_restore`를 사용합니다.

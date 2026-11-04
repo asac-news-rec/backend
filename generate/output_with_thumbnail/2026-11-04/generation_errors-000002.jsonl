@@ -1,0 +1,1 @@
+{"time": "2026-11-04T11:35:00.627569+09:00", "stage": "article", "item_number": 17, "article_id": null, "attempt": 1, "status": "retrying", "error_type": "ResponseError", "error": "prediction aborted, token repeat limit reached (status code: -1)"}

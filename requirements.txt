@@ -1,0 +1,4 @@
+# Python 3.14 / backend에서 실행: python -m pip install -r requirements.txt
+# WAS + 기사·이미지 생성·DB 적재의 직접 의존성
+-r app/requirements.txt
+-r generate/requirements_thumbnail.txt

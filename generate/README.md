@@ -4,7 +4,7 @@ Backend API: recommendation serving and event collection
 
 뉴스 추천 프로젝트의 backend 저장소입니다. 현재 포함된 코드는 `synthetic_news`에서 가져온
 기사·썸네일 생성, PostgreSQL 적재용 CLI입니다.
-로컬 PostgreSQL용 Docker Compose는 저장소 루트에 있습니다. HTTP 추천 서빙 API, 사용자 이벤트 수집 API, 생성 Worker의 Docker/Kubernetes 배포 구성은 아직 포함되어 있지 않습니다.
+로컬 PostgreSQL용 Docker Compose는 저장소 루트에 있습니다. 뉴스 조회·좋아요·익명 ID 발급 FastAPI는 `../app/`에 있습니다. 추천서버 연결, 사용자 행동 이벤트 수집 API, 생성 Worker의 Docker/Kubernetes 배포 구성은 아직 포함되어 있지 않습니다.
 
 ## 포함 파일
 
@@ -21,7 +21,7 @@ Backend API: recommendation serving and event collection
 
 | 구성 | 역할 | 준비 방법 |
 | --- | --- | --- |
-| Python 3.12 | 생성·이미지 처리·DB 적재 코드 실행 | conda 또는 venv 환경 생성 후 의존성 설치 |
+| Python 3.14 | 생성·이미지 처리·DB 적재 코드 실행 | conda 또는 venv 환경 생성 후 의존성 설치 |
 | Ollama | 로컬 텍스트 모델을 실행하는 서버 | Ollama 설치 후 실행 |
 | Gemma 3 4B | 기사 본문과 영문 이미지 프롬프트 작성 | `ollama pull gemma3:4b` |
 | SDXL | 이미지 프롬프트를 받아 썸네일 생성 | 첫 이미지 생성 시 코드가 모델 가중치 다운로드 |
@@ -53,15 +53,20 @@ Ollama도 SDXL을 실행하지 않습니다. SDXL은 생성 Python 프로세스�
 cd /Users/taewonkim/Documents/final_project/backend/generate
 
 # 새 환경이 필요한 경우 한 번만 생성
-conda create -n recommand python=3.12
-conda activate recommand
+conda create -n recommand314 python=3.14
+conda activate recommand314
 
 python -m pip install -r requirements_thumbnail.txt
 ```
 
-이미 `recommand` 환경을 사용 중이면 환경 생성은 생략하고 활성화·패키지 설치만 합니다.
+이미 `recommand314` 환경을 사용 중이면 환경 생성은 생략하고 활성화·패키지 설치만 합니다.
 `python -m pip`는 현재 선택한 Python 환경에 패키지를 설치합니다.
 Python 패키지 설치만으로 Ollama 프로그램이나 Gemma 모델까지 설치되지는 않습니다.
+
+`recommand_env.yml`은 Python 3.14 Conda 환경 설정이며, 개인 PC 경로는 포함하지 않습니다.
+WAS까지 함께 설치하려면 backend 루트에서 `python -m pip install -r requirements.txt`를 실행합니다.
+`recommand_pip.txt`는 현재 환경의 전체 버전 스냅샷으로, 학습·분석·Jupyter 패키지까지 포함하므로 일반 실행에 전부 필요한 목록은 아닙니다.
+기존 환경에서 `python --version`으로 3.14인지 확인하세요. 환경 파일을 편집하는 것만으로 실행 중인 Python 버전이 바뀌지는 않습니다.
 
 ### 2. Ollama 설치·실행과 Gemma 다운로드
 
@@ -88,7 +93,7 @@ ollama serve
 ### 3. 기사와 이미지 한 건 생성
 
 ```bash
-conda activate recommand
+conda activate recommand314
 cd /Users/taewonkim/Documents/final_project/backend/generate
 python -m generate_with_thumbnail --count 1 --model gemma3:4b
 ```
@@ -242,8 +247,8 @@ python load_postgres.py --input /path/to/articles.jsonl \
 
 좋아요 두 테이블의 article_id는 news_articles(id)를 참조합니다. history.action은 like/unlike만 허용합니다.
 기사 재적재는 현재 좋아요와 변경 이력을 수정하지 않습니다. 이 적재 CLI는 좋아요 행을 생성하지 않으며,
-실제 상태 변경과 이력 추가를 같은 트랜잭션으로 수행하는 것은 향후 뉴스 API의 책임입니다.
-같은 상태 요청에 이력을 추가하지 않는 동작 역시 API에서 구현해야 합니다.
+현재 `../app/repository.py`의 `set_like()`와 API 연결 컨텍스트가 상태 변경과 이력 추가를 같은 트랜잭션으로 수행합니다.
+같은 상태 요청에는 이력을 추가하지 않습니다.
 --validate-only는 DB 접속·테이블 생성을 수행하지 않습니다.
 CREATE TABLE IF NOT EXISTS는 이미 있는 테이블의 정의를 자동 변경하지 않습니다. 기존 스키마가 다르면 별도 변경 SQL이 필요합니다.
 

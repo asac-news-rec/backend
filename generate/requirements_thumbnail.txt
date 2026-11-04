@@ -1,19 +1,23 @@
-# 기사·이미지 생성
-langchain-anthropic>=0.3.15,<2
-langchain-core>=0.3.65,<2
-pydantic>=2.7,<3
-langchain-ollama>=0.3.4,<2
+# Python 3.14 / recommand314 기준 (2026-11-04 설치 버전)
+# Python 자체는 generate/recommand_env.yml로 설정합니다.
 
-# SDXL 실행용 검증 버전 조합
-diffusers==0.37.0
-transformers==4.57.6
-huggingface-hub==0.36.2
-accelerate>=1.0,<2
-torch>=2.5
-pillow>=10
-safetensors>=0.4
-sentencepiece>=0.2
+# 기사 생성
+langchain-anthropic==1.7.9
+langchain-core==1.7.4
+pydantic==2.14.2
+langchain-ollama==1.1.0
+ollama==0.6.3
+
+# SDXL — 현재 환경 설치 버전; 아래 검증은 import 수준이며 이미지 재생성 검증은 별도
+diffusers==0.42.1
+transformers==5.22.1
+huggingface-hub==2.4.0
+accelerate==1.15.0
+torch==2.15.0
+pillow==13.0.0
+safetensors==0.8.0
+sentencepiece==0.2.2
 
 # PostgreSQL 적재
-psycopg[binary]>=3.2,<4
-python-dotenv>=1,<2
+psycopg[binary]==3.3.7
+python-dotenv==1.2.4

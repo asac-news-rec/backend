@@ -7,6 +7,9 @@ venv/
 __pycache__/
 *.py[cod]
 .DS_Store
+generate/recommand_env.yml
+generate/recommand_env.yaml
+generate/recommand_pip.txt
 
 # Local models and generated artifacts
 .cache/
