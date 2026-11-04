@@ -11,10 +11,10 @@ app = FastAPI()
 
 # 뉴스조회 요청 json의 형식
 class FeedRequest(BaseModel):
-    user_id:str = Field(min_length=1, max_length=128)
+    reader_id:str = Field(min_length=1, max_length=128)
     offset:int = Field(default = 0,ge=0)
 class LikeRequest(BaseModel):
-    user_id: str = Field(min_length=1, max_length=128)
+    reader_id: str = Field(min_length=1, max_length=128)
 
 @app.get("/health")
 def health():
@@ -40,7 +40,7 @@ def news_feed(body:FeedRequest):
     try:
         # DB연결 후 해당 사용자의 뉴스 목록 조회
         with connect() as conn:
-            items, has_more = fetch_news(conn,body.user_id,body.offset)
+            items, has_more = fetch_news(conn,body.reader_id,body.offset)
         # 각 기사에 이번 노출의 식별자와 표시 순서 추가
         for position, item in enumerate(items,start=body.offset + 1):
             item['impression_id'] = str(uuid7())
@@ -50,6 +50,7 @@ def news_feed(body:FeedRequest):
             if has_more else None
         )
         return {
+            "reader_id": body.reader_id,
             "request_id":str(uuid7()),
             "served_at":datetime.now(timezone.utc).isoformat(),
             "items":items,
@@ -66,7 +67,7 @@ def change_like(article_id, body, desired):
         with connect() as conn:
             result = set_like(
                 conn,
-                body.user_id,
+                body.reader_id,
                 article_id,
                 desired,
             )
@@ -99,5 +100,5 @@ def unlike(article_id: str, body: LikeRequest):
 @app.post("/user/anonymous")
 def create_anonymous_user():
     return {
-        "user_id":str(uuid7())
+        "reader_id":str(uuid7())
     }

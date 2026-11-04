@@ -1,5 +1,21 @@
 # 기사 DB 백업 복원 안내
 
+## reader_id 변경 후 최신 백업
+
+`newsdb_2026-11-04_reader_id.dump`는 reader_id 컬럼으로 통일한 최신 전체 DB 백업입니다.
+기사 250건, 좋아요 12건, 변경 이력 24건을 포함합니다. 테이블이 없는 빈 DB에는 아래 백업을 선택하세요.
+
+```bash
+docker compose exec -T postgres sh -c \
+  'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner --no-privileges --exit-on-error --single-transaction' \
+  < exports/newsdb_2026-11-04_reader_id.dump
+```
+
+기존 `newsdb_2026-11-04.dump`는 user_id 컬럼을 사용하는 변경 전 스냅샷으로 보존했습니다.
+기존 백업을 이미 복원한 DB에서는 루트 README의 `migrations/20261104_reader_id.sql`을 적용하세요.
+두 전체 백업을 같은 DB에 연달아 복원하지 마세요.
+
+
 ## 2026-11-04 전체 DB 백업
 
 `newsdb_2026-11-04.dump`는 기사 250건과 현재 좋아요·변경 이력 테이블의 구조 및 데이터를 포함한 전체 프로젝트 DB 백업입니다. 기존 `news_articles.dump`는 이전 시점의 기사 전용 백업이므로 구분해서 사용합니다. 이미지 파일과 DB 접속 비밀번호는 이 백업에 포함하지 않습니다.

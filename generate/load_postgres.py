@@ -42,17 +42,17 @@ CREATE TABLE IF NOT EXISTS public.news_articles (
 
 CREATE_LIKES_TABLE = """
 CREATE TABLE IF NOT EXISTS public.article_likes (
-    user_id TEXT NOT NULL,
+    reader_id TEXT NOT NULL,
     article_id TEXT NOT NULL REFERENCES public.news_articles(id),
     liked_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (user_id, article_id)
+    PRIMARY KEY (reader_id, article_id)
 )
 """
 
 CREATE_LIKE_HISTORY_TABLE = """
 CREATE TABLE IF NOT EXISTS public.article_like_history (
     change_id UUID PRIMARY KEY,
-    user_id TEXT NOT NULL,
+    reader_id TEXT NOT NULL,
     article_id TEXT NOT NULL REFERENCES public.news_articles(id),
     action TEXT NOT NULL CHECK (action IN ('like', 'unlike')),
     changed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP

@@ -242,8 +242,8 @@ python load_postgres.py --input /path/to/articles.jsonl \
 | 테이블 | 생성 컬럼·키 |
 |---|---|
 | public.news_articles | 기존 기사 19개 컬럼, id 기본키 |
-| public.article_likes | user_id·article_id 복합 기본키, liked_at |
-| public.article_like_history | change_id UUID 기본키, user_id, article_id, action, changed_at |
+| public.article_likes | reader_id·article_id 복합 기본키, liked_at |
+| public.article_like_history | change_id UUID 기본키, reader_id, article_id, action, changed_at |
 
 좋아요 두 테이블의 article_id는 news_articles(id)를 참조합니다. history.action은 like/unlike만 허용합니다.
 기사 재적재는 현재 좋아요와 변경 이력을 수정하지 않습니다. 이 적재 CLI는 좋아요 행을 생성하지 않으며,
