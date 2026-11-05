@@ -93,21 +93,14 @@ docker compose start
 `.env`의 초기 계정·비밀번호는 빈 볼륨 최초 초기화 때 적용됩니다. 기존 DB의 비밀번호를 바꾸려면 DB에서 변경해야 하며,
 .env 값만 바꾼다고 DB 비밀번호가 자동 변경되지는 않습니다. 기존 recommend_pgdata 복구는 별도 작업입니다.
 
-## reader_id 인터페이스 및 기존 DB 이전
+## reader_id 인터페이스
 
 사용자 식별 필드는 요청·응답·좋아요 DB에서 `reader_id`로 통일합니다.
 발급 경로는 기존 `POST /user/anonymous`를 유지하며 `{"reader_id": "UUID7"}`을 반환합니다.
 뉴스 조회와 좋아요 요청은 `reader_id`를 보내야 하며, 이전 `user_id`만 보내면 422입니다.
 뉴스 조회 응답의 최상위에도 `reader_id`를 포함합니다. 프론트 저장 키와 JSON 필드를 함께 갱신하세요.
 
-기존 DB를 사용하는 다른 환경에서는 이전 WAS를 중지한 뒤 아래 SQL을 한 번 적용하고,
-새 코드를 실행하세요. 행을 삭제하지 않고 좋아요 두 테이블의 컬럼 이름만 변경합니다.
-이미 변경된 DB에 다시 실행해도 됩니다. 신규 DB는 적재기가 처음부터 reader_id로 생성합니다.
-
-```bash
-docker compose exec -T postgres sh -c \
-  'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
-  < migrations/20261104_reader_id.sql
-```
+신규 DB는 기사 적재기가 `reader_id` 컬럼으로 테이블을 생성합니다.
+빈 DB에 백업을 복원할 때는 [백업 복원 안내](exports/README.md)의 `reader_id` 버전을 사용하세요.
 
 Dockerfile도 루트 `requirements.txt`를 설치합니다. 통합 구성에 따라 WAS 이미지에도 Torch·Diffusers 등 생성용 패키지가 함께 설치됩니다.
