@@ -4,7 +4,7 @@ from .db import connect
 import json
 from uuid import uuid7
 
-def fetch_news(conn,reader_id,offset):
+def fetch_news(conn,reader_id,offset,category=None, subcategory=None):
     with conn.cursor() as cur:
         cur.execute("""
             SELECT
@@ -29,13 +29,38 @@ def fetch_news(conn,reader_id,offset):
             LEFT JOIN public.article_likes AS l
                 ON l.article_id = a.id
                 AND l.reader_id = %s
+            WHERE (%s::text IS NULL OR a.category=%s)
+                AND (%s::text IS NULL OR a.subcategory=%s)
             ORDER BY a.published_at DESC, a.id DESC
             -- 다음 페이지 확인용 1개를 포함해 최대 21개 조회
             LIMIT 21 OFFSET %s
-        """, (reader_id,offset))
+        """, (reader_id,category,category,subcategory, subcategory,offset))
         rows = cur.fetchall()
         # row[:20] 실제 응답에는 최대 20개만 포함, len(rows)>20 : 21번째 기사가 있으면 다음 page가 있다는 것
         return rows[:20], len(rows) > 20
+    
+# category고유값 추출
+def fetch_big_category(conn):
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT
+                distinct(a.category)
+            FROM public.news_articles AS a
+            order by category
+        """)
+        return cur.fetchall()
+
+# category값을 받아서 sub_category값을 추출
+def fetch_sub_category(conn,category):
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT
+                DISTINCT(a.subcategory)
+            FROM public.news_articles AS a
+            WHERE category = %s
+            AND a.subcategory IS NOT NULL
+            """,(category,))
+        return cur.fetchall()
 
 class ArticleNotFound(Exception):
     pass

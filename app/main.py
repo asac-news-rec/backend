@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import uuid7
 from pydantic import BaseModel,Field
-from .repository import ArticleNotFound, fetch_news, set_like
+from .repository import ArticleNotFound, fetch_news, set_like, fetch_big_category, fetch_sub_category
 
 import psycopg
 from fastapi import FastAPI,HTTPException
@@ -14,8 +14,13 @@ app = FastAPI(root_path="/api")
 class FeedRequest(BaseModel):
     reader_id:str = Field(min_length=1, max_length=128)
     offset:int = Field(default = 0,ge=0)
+    category:str | None = None
+    subcategory:str | None = None
 class LikeRequest(BaseModel):
     reader_id: str = Field(min_length=1, max_length=128)
+
+class SubcategoryRequest(BaseModel):
+    category: str = Field(min_length=1)
 
 @app.get("/health")
 def health():
@@ -41,7 +46,12 @@ def news_feed(body:FeedRequest):
     try:
         # DB연결 후 해당 사용자의 뉴스 목록 조회
         with connect() as conn:
-            items, has_more = fetch_news(conn,body.reader_id,body.offset)
+            items, has_more = fetch_news(
+                conn,body.reader_id,
+                body.offset,
+                category = body.category,
+                subcategory=body.subcategory,
+                )
         # 각 기사에 이번 노출의 식별자와 표시 순서 추가
         for position, item in enumerate(items,start=body.offset + 1):
             item['impression_id'] = str(uuid7())
@@ -61,6 +71,7 @@ def news_feed(body:FeedRequest):
             status_code=503,
             detail="뉴스조회에 실패하였습니다."
         ) from exc
+    
 # 설정·해제 API가 공통으로 사용하는 처리 함수
 def change_like(article_id, body, desired):
     try:
@@ -102,3 +113,16 @@ def create_anonymous_user():
     return {
         "reader_id":str(uuid7())
     }
+
+@app.post("/category")
+def call_category():
+    with connect() as conn:
+        rows = fetch_big_category(conn)
+    return {
+            "category_list" : [row['category'] for row in rows]
+        } 
+@app.post("/subcategory")
+def call_subcategory(body: SubcategoryRequest):
+    with connect() as conn:
+        rows = fetch_sub_category(conn,body.category)
+    return {'sub_category_list' : [row['subcategory'] for row in rows] }
