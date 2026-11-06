@@ -38,6 +38,8 @@ services:
       #     :?	값이 없거나 비어 있으면 오류 발생
       # Set PGPASSWORD in .env	오류가 났을 때 보여줄 메시지
       PGPASSWORD: ${PGPASSWORD:?Set PGPASSWORD in .env}
+    volumes:
+      - news-log-spool:/var/spool/news-logs
     # depends_on : 서비스 간 시작 순서와 시작 조건을 지정하는 설정
     depends_on:
       postgres:
@@ -53,6 +55,15 @@ services:
       timeout: 5s
       retries: 6
       start_period: 10s
+  log_sender:
+    build: .
+    profiles: ["logging"]
+    command: ["python", "-m", "app.log_sender"]
+    restart: unless-stopped
+    environment:
+      LOG_RECEIVER_URL: ${LOG_RECEIVER_URL:-}
+    volumes:
+      - news-log-spool:/var/spool/news-logs
   nginx:
     image: nginx:stable-alpine
     restart: unless-stopped
@@ -77,5 +88,6 @@ services:
     #     → nginx 시작
 
 volumes:
+  news-log-spool:
   postgres-data:
     name: asac-news-backend-postgres-data

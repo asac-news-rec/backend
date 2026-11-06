@@ -1,3 +1,5 @@
+import logging
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from uuid import uuid7
 from pydantic import BaseModel,Field
@@ -6,9 +8,21 @@ from .repository import ArticleNotFound, fetch_news, set_like, fetch_big_categor
 import psycopg
 from fastapi import FastAPI,HTTPException
 from .db import connect
+from .feed_log import prepare_log_directory, write_feed_log
+
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        prepare_log_directory()
+    except OSError:
+        logger.exception("뉴스 로그 대기 폴더 준비 실패")
+    yield
 
 # root_path는 외부에서 /api 접두사를 통해 접근한다는 정보
-app = FastAPI(root_path="/api")
+app = FastAPI(root_path="/api", lifespan=lifespan)
 
 # 뉴스조회 요청 json의 형식
 class FeedRequest(BaseModel):
@@ -60,12 +74,17 @@ def news_feed(body:FeedRequest):
             body.offset+len(items)
             if has_more else None
         )
-        return {
+        response = {
             "request_id":str(uuid7()),
             "served_at":datetime.now(timezone.utc).isoformat(),
             "items":items,
             "next_offset":next_offset,
         }
+        try:
+            write_feed_log(body.reader_id, response)
+        except OSError:
+            logger.exception("뉴스 반환 로그 저장 실패: request_id=%s", response["request_id"])
+        return response
     except psycopg.Error as exc:
         raise HTTPException(
             status_code=503,
