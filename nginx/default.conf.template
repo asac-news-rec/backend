@@ -1,0 +1,16 @@
+server {
+    listen 80;
+    server_name _;
+
+    location /api/ {
+        # 같은 Cloud Run 인스턴스의 FastAPI 컨테이너로 요청을 전달한다.
+        proxy_pass http://127.0.0.1:8000/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / {
+        return 404;
+    }
+}

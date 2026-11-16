@@ -1,0 +1,12 @@
+name-template: 'v$RESOLVED_VERSION'
+tag-template: 'v$RESOLVED_VERSION'
+change-template: '- $TITLE (#$NUMBER)'
+
+categories:
+  - type: version-resolver
+    semver-increment: patch
+
+template: |
+  ## 변경 사항
+
+  $CHANGES

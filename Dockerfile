@@ -7,11 +7,13 @@ ENV PYTHONUNBUFFERED=1
 # __pycache__/*.pyc: 다음 실행 때 code를 읽는 시간을 줄이는 캐시임. 컨테이너에서는 필요없어서 삭제(필수아님)
 ENV PYTHONDONTWRITEBYTECODE=1
 
-# --no-cache-dir : package는 설치하되 다운로드한 설치파일 등의 pip캐시는 보관하지 않는다
-# 이미지에 불필요한 캐시가 들어가 용량이 커지는 것을 줄임
-RUN python -m pip install --no-cache-dir uv==0.13.7
-COPY requirements.txt ./requirements.txt
-RUN uv pip install --system --no-cache-dir -r requirements.txt
+# 공식 이미지에서 버전을 고정한 uv 바이너리를 가져온다.
+COPY --from=ghcr.io/astral-sh/uv:0.13.7 /uv /usr/local/bin/uv
+COPY pyproject.toml uv.lock ./
+RUN uv sync --locked --no-cache --no-dev --no-install-project
+
+# CMD와 Compose에서 실행하는 python이 같은 .venv를 사용한다.
+ENV PATH="/app/.venv/bin:$PATH"
 
 COPY app/ ./app/
 # --host 0.0.0.0(0.0.0.0은 요청을 보내는 상대의 IP가 아니라, WAS가 요청을 받을 자신의 주소를 지정)	컨테이너 밖에서 들어오는 연결도 받을 수 있도록 대기.

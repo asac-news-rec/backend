@@ -1,0 +1,55 @@
+name: Feature
+description: 뉴스 백엔드의 새 기능이나 개발·검증 절차 개선을 제안합니다.
+title: "[FEAT] "
+labels: ["feature"]
+body:
+  - type: textarea
+    id: purpose
+    attributes:
+      label: 목적
+      description: 왜 필요한지, 어떤 문제를 해결하는지 적어 주세요.
+      placeholder: 예) 뉴스 피드 조회 쿼리가 PostgreSQL에서 올바르게 동작하는지 검증합니다.
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: 작업 범위
+      description: 이번 이슈에서 바꿀 내용을 적어 주세요.
+      placeholder: 예) PostgreSQL 조회 테스트를 추가하고 CI에 테스트용 DB를 연결합니다.
+    validations:
+      required: true
+
+  - type: textarea
+    id: done
+    attributes:
+      label: 완료 조건
+      description: 작업이 끝났다고 판단할 수 있는 기준을 적어 주세요.
+      placeholder: 예) PR의 CI에서 카테고리 필터와 최신순 정렬 테스트가 통과합니다.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: 영향받는 컴포넌트
+      multiple: true
+      options:
+        - 뉴스 API
+        - PostgreSQL·기사 적재
+        - 피드 로그
+        - Nginx
+        - CI/CD·Cloud Run
+        - 문서
+        - 기타
+    validations:
+      required: false
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: 참고 사항
+      description: 관련 이슈, 설계 메모나 참고 링크가 있으면 남겨 주세요.
+    validations:
+      required: false

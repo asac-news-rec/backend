@@ -1,9 +1,6 @@
 # 기여 가이드 (Contributing Guide)
 
-infra 저장소에 기여해 주셔서 감사합니다.
-이 저장소는 ASAC 파이널 프로젝트(뉴스 추천 시스템)의 로컬 개발 환경(Docker Compose),
-클라우드 인프라(Terraform, Helm)와 GitHub 운영 자동화를 관리합니다.
-원활한 협업을 위해 아래 규칙을 따라 주세요.
+이 저장소는 ASAC 뉴스 추천 시스템의 FastAPI 서버, PostgreSQL 데이터 접근, 기사 생성·적재, 백엔드 CI/CD를 관리합니다
 
 ---
 
@@ -16,7 +13,10 @@ infra 저장소에 기여해 주셔서 감사합니다.
 ```
 
 1. **이슈 등록**: 코드가 변경되는 작업은 반드시 이슈를 먼저 만듭니다.
-   `Issues > New issue`에서 Issue Form(Feature / Bug / Experiment)을 선택해 작성해 주세요. Form을 선택하면 제목 prefix와 label이 자동으로 적용됩니다.
+   `Issues > New issue`에서 Issue Form(Feature / Bug / Experiment / 인프라 요청)을 선택해 작성해 주세요. Form을 선택하면 제목 prefix와 label이 자동으로 적용됩니다.
+   인프라 자원(Terraform 리소스, Helm Chart, Secret)이 필요하면 **인프라 요청** Form으로 요청합니다. Secret 값은 이슈에 적지 않습니다.
+   인프라 요청 이슈는 형식과 내용이 적절하면 그대로 작업 이슈로 사용하고, 그 이슈에서 `Create a branch`로 브랜치를 만듭니다. 요청이 여러 작업으로 나뉘거나 코드 변경 없는 결정이 필요하면 담당자가 Feature 이슈를 새로 만듭니다.
+   브랜치 type은 `feat`, `fix`, `exp`, `docs`, `refactor`, `chore` 중에서 고릅니다. `infra-request`는 label이며 type이 아닙니다.
 
 2. **작업 브랜치 생성**: 브랜치는 **해당 이슈에서 생성**합니다.
    이슈 우측 `Development > Create a branch`를 사용하면 브랜치가 이슈에 자동 연결되고, `main` 기준으로 분기됩니다. 브랜치 네이밍 규칙은 아래를 따릅니다.
@@ -82,9 +82,9 @@ git switch feat/42-add-docker-compose
 
 | type | 사용 상황 |
 |------|-----------|
-| `feat` | 로컬 개발 환경, 클라우드 인프라 리소스, IaC, GitHub 자동화 추가 |
-| `fix` | 인프라 설정, 권한, workflow, 문서 오류 수정 |
-| `refactor` | 동작 변화 없는 IaC/문서/설정 구조 정리 |
+| `feat` | 뉴스 API, 기사 생성·적재 기능, 백엔드 CI/CD 추가 |
+| `fix` | API, DB 쿼리, 배포 워크플로, 문서 오류 수정 |
+| `refactor` | 동작 변화 없는 백엔드 코드·문서·설정 구조 정리 |
 | `docs` | 문서 추가·수정 |
 | `chore` | 저장소 기본 설정, 관리 작업 |
 | `exp` | 구성 방식, 도구, 운영 자동화 실험 |
@@ -92,10 +92,10 @@ git switch feat/42-add-docker-compose
 ### 예시
 
 ```
-feat: Postgres 컨테이너 설정 추가
-fix: Airflow 포트 충돌 수정
-exp: 가짜 GCS 에뮬레이터 비교
-docs: compose 실행 가이드 초안 작성
+feat: 백엔드 CI/CD 워크플로 추가
+fix: 뉴스 피드 필터 처리 수정
+exp: 뉴스 피드 조회 쿼리 성능 비교
+docs: 백엔드 실행 가이드 갱신
 ```
 
 - 설명은 한국어로 작성합니다.
@@ -117,13 +117,14 @@ docs: compose 실행 가이드 초안 작성
 설정되어 있지 않습니다. 비공개 레포에서 규칙을 강제할 수 있는지는 GitHub 레포
 Settings → Rules에서 확인하고, 강제할 수 없으면 위 규칙을 팀 약속으로 지킵니다.
 
-## 인프라 변경 리뷰 원칙
+## 백엔드 변경 리뷰 원칙
 
-- (클라우드 변경이라면) GCP 리소스의 프로젝트, 리전, 이름, 비용 영향을 확인합니다.
+- API 요청·응답과 DB 쿼리가 프론트 연동에 미치는 영향을 확인합니다.
+- 배포 변경은 대상 GCP 프로젝트, 리전, Cloud Run 서비스 이름, 실행 계정, Secret 참조와 비용 영향을 확인합니다.
 - IAM 권한은 최소 권한 원칙을 따릅니다.
 - Secret 값은 코드, 로그, PR 본문에 포함하지 않습니다.
 - Terraform state, service account key, `.env` 파일은 커밋하지 않습니다.
-- 삭제/교체/권한 확대 변경은 롤백 방법을 PR에 적습니다.
+- 배포, 리소스 삭제·교체, 권한 확대 변경은 롤백 방법을 PR에 적습니다.
 
 ---
 
@@ -134,13 +135,13 @@ Settings → Rules에서 확인하고, 강제할 수 없으면 위 규칙을 팀
 - 에이전트가 남긴 `이해도 확인:` inline comment에는 같은 스레드에서 답변하고, 필요하면 로컬에서 검증한 뒤 resolve합니다.
 - trivial, docs-only, formatting-only 변경에는 이해도 확인 comment를 남기지 않는 정책입니다.
 - 필요한 repository secret: `CLAUDE_CODE_OAUTH_TOKEN` (**[준비 중]** 등록 전에는 실패로 표시될 수 있습니다)
-- 에이전트 작업 규칙은 `CLAUDE.md`/`AGENTS.md`(symlink)와 `.claude/docs/`를 기준으로 합니다.
+- 에이전트 작업 규칙은 `AGENTS.md`와 `.claude/docs/`를 기준으로 합니다.
 
 ---
 
 ## Label 및 Project 운영
 
-label은 필요할 때 레포에 직접 만들어 사용합니다. 후보: `feature`, `bug`, `experiment`, `documentation`, `chore`, `question`.
+label은 필요할 때 레포에 직접 만들어 사용합니다. 후보: `feature`, `bug`, `experiment`, `documentation`, `chore`, `question`, `infra-request`.
 Issue Form이 label을 자동으로 붙이려면 레포에 같은 이름의 label이 있어야 합니다.
 
 Project 보드는 아직 사용하지 않습니다. **[미정]**
@@ -183,4 +184,4 @@ git diff --check
 - Repository: https://github.com/asac-news-rec/infra
 - Issue Forms: `.github/ISSUE_TEMPLATE/*.yml`
 - PR template: `.github/PULL_REQUEST_TEMPLATE.md`
-- 에이전트 가이드: `CLAUDE.md`, `AGENTS.md`(symlink), `.claude/docs/`
+- 에이전트 가이드: `AGENTS.md`, `.claude/docs/`

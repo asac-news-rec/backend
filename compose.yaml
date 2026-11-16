@@ -38,8 +38,11 @@ services:
       #     :?	값이 없거나 비어 있으면 오류 발생
       # Set PGPASSWORD in .env	오류가 났을 때 보여줄 메시지
       PGPASSWORD: ${PGPASSWORD:?Set PGPASSWORD in .env}
-    volumes:
-      - news-log-spool:/var/spool/news-logs
+      DB_POOL_MAX_SIZE: "${DB_POOL_MAX_SIZE:-4}"
+      READER_COOKIE_SECRET: "${READER_COOKIE_SECRET:-}"
+      READER_COOKIE_SECURE: "${READER_COOKIE_SECURE:-false}"
+    # volumes:
+    #   - news-log-spool:/var/spool/news-logs
     # depends_on : 서비스 간 시작 순서와 시작 조건을 지정하는 설정
     depends_on:
       postgres:
@@ -55,15 +58,16 @@ services:
       timeout: 5s
       retries: 6
       start_period: 10s
-  log_sender:
-    build: .
-    profiles: ["logging"]
-    command: ["python", "-m", "app.log_sender"]
-    restart: unless-stopped
-    environment:
-      LOG_RECEIVER_URL: ${LOG_RECEIVER_URL:-}
-    volumes:
-      - news-log-spool:/var/spool/news-logs
+  # 반환 로그 전송 설정은 후속 배포에서 연결합니다.
+  # log_sender:
+  #   build: .
+  #   profiles: ["logging"]
+  #   command: ["python", "-m", "app.logging.log_sender"]
+  #   restart: unless-stopped
+  #   environment:
+  #     LOG_RECEIVER_URL: ${LOG_RECEIVER_URL:-}
+  #   volumes:
+  #     - news-log-spool:/var/spool/news-logs
   nginx:
     image: nginx:stable-alpine
     restart: unless-stopped
@@ -74,7 +78,13 @@ services:
       # PC 경로 : 컨테이너 경로 : 접근 방식 -> 읽기 전용(read-only)
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
       - ./generate/output_with_thumbnail:/srv/images:ro
-      - ./web:/usr/share/nginx/html:ro
+      # 옆의 frontend 저장소에서 npm run build로 생성한 파일을 연결한다.
+      - type: bind
+        source: ../frontend/dist
+        target: /usr/share/nginx/html
+        read_only: true
+        bind:
+          create_host_path: false
     depends_on:
       api:
         condition: service_healthy
@@ -88,6 +98,6 @@ services:
     #     → nginx 시작
 
 volumes:
-  news-log-spool:
+  # news-log-spool:
   postgres-data:
     name: asac-news-backend-postgres-data

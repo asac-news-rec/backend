@@ -1,0 +1,177 @@
+# GitHub Actions 탭에 표시되는 배포 워크플로 이름이다.
+name: backend-cd
+
+on:
+  # GitHub에서 릴리스를 공개할 때 배포를 시작한다.
+  release:
+    types: [published]
+
+# 한 번에 한 배포만 진행한다.
+concurrency:
+  group: news-cloud-run
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  # 릴리스 커밋의 CI 실행 결과를 읽는다.
+  actions: read
+
+env:
+  # GitHub 저장소의 Actions Variables에서 프로젝트, 배포 리전, 이미지 저장소를 가져온다.
+  GCP_PROJECT: ${{ vars.GCP_PROJECT }}
+  RUN_REGION: ${{ vars.RUN_REGION }}
+  AR_REGION: ${{ vars.AR_REGION }}
+  AR_REPOSITORY: ${{ vars.AR_REPOSITORY }}
+  # Cloud Run 서비스 계정과 FastAPI의 Cloud SQL 접속 정보다.
+  WAS_SERVICE_ACCOUNT: ${{ vars.WAS_SERVICE_ACCOUNT }}
+  CLOUD_SQL_INSTANCE: ${{ vars.CLOUD_SQL_INSTANCE }}
+  WAS_DB_NAME: ${{ vars.WAS_DB_NAME }}
+  WAS_DB_USER: ${{ vars.WAS_DB_USER }}
+  # 비밀번호 값은 Secret Manager에 있고, 여기서는 Secret 이름만 가져온다.
+  WAS_DB_PASSWORD_SECRET: ${{ vars.WAS_DB_PASSWORD_SECRET }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 릴리스 태그가 가리키는 커밋의 main 푸시 CI 성공 기록을 확인한다.
+      - name: Verify release commit passed CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ci_run_url="$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
+            -f branch=main \
+            -f event=push \
+            -f head_sha="$GITHUB_SHA" \
+            -f status=success \
+            -F per_page=1 \
+            --jq '.workflow_runs[0].html_url // empty')"
+          if [[ -z "$ci_run_url" ]]; then
+            echo "::error::릴리스 커밋 ${GITHUB_SHA}의 main CI 성공 기록이 없습니다. CI 성공을 확인한 뒤 이 배포를 다시 실행하세요."
+            exit 1
+          fi
+          echo "릴리스 커밋의 CI 성공 기록: $ci_run_url"
+
+      # 릴리스가 공개될 때 태그가 가리킨 커밋을 가져온다.
+      - name: Check out the release commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      # 서로 다른 Dockerfile로 WAS와 Nginx 이미지를 각각 만든다.
+      - name: Build WAS and Nginx images
+        run: |
+          set -euo pipefail
+          : "${GCP_PROJECT:?Set GCP_PROJECT}" "${AR_REGION:?Set AR_REGION}" "${AR_REPOSITORY:?Set AR_REPOSITORY}"
+          image_root="${AR_REGION}-docker.pkg.dev/${GCP_PROJECT}/${AR_REPOSITORY}"
+          commit="$(git rev-parse HEAD)"
+          was_image="$image_root/news-feed:$commit"
+          nginx_image="$image_root/news-web:$commit"
+          docker build --platform linux/amd64 -t "$was_image" .
+          docker build --platform linux/amd64 -f nginx/Dockerfile -t "$nginx_image" .
+          # 다음 단계에서도 같은 이미지 이름을 쓸 수 있게 넘긴다.
+          printf 'WAS_IMAGE=%s\nNGINX_IMAGE=%s\n' "$was_image" "$nginx_image" >> "$GITHUB_ENV"
+
+      # 업로드하기 전에 방금 빌드한 두 이미지로 Nginx를 경유한 API 응답을 확인한다.
+      - name: Test the images before publishing
+        run: bash .github/scripts/smoke-containers.sh "$WAS_IMAGE" "$NGINX_IMAGE"
+
+      # 배포용 서비스 계정 JSON 키는 GitHub 저장소의 Secret에서 읽는다.
+      - name: Authenticate to Google Cloud
+      # google cloud인증용 Action
+        uses: google-github-actions/auth@v3
+        with:
+          credentials_json: '${{ secrets.GCP_SA_KEY }}'
+
+      # 실행기에서 gcloud 명령을 사용할 수 있게 준비한다.
+      - uses: google-github-actions/setup-gcloud@v3
+
+      # Docker에 Registry 인증을 연결하고, 앞에서 만든 두 이미지를 업로드한다.
+      - name: Push images to Artifact Registry
+        run: |
+          set -euo pipefail
+          gcloud auth configure-docker "${AR_REGION}-docker.pkg.dev" --quiet
+          docker push "$WAS_IMAGE"
+          docker push "$NGINX_IMAGE"
+
+      - name: Deploy Nginx and FastAPI to Cloud Run
+        env:
+          DB_POOL_MAX_SIZE: ${{ vars.DB_POOL_MAX_SIZE }}
+          WAS_READER_COOKIE_SECRET: news-reader-cookie-secret
+        run: |
+          set -euo pipefail
+          # 필수 설정이 비어 있으면 Cloud Run 배포를 시작하기 전에 오류를 낸다.
+          : "${RUN_REGION:?Set RUN_REGION}" "${WAS_SERVICE_ACCOUNT:?Set WAS_SERVICE_ACCOUNT}"
+          : "${CLOUD_SQL_INSTANCE:?Set CLOUD_SQL_INSTANCE}" "${WAS_DB_NAME:?Set WAS_DB_NAME}"
+          : "${WAS_DB_USER:?Set WAS_DB_USER}" "${WAS_DB_PASSWORD_SECRET:?Set WAS_DB_PASSWORD_SECRET}"
+
+          # 같은 서비스에 Nginx와 FastAPI 컨테이너를 함께 정의한다.
+          service_config="$RUNNER_TEMP/news-feed.yaml"
+          python3 - "$service_config" <<'PYTHON'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          connection_name = os.environ["CLOUD_SQL_INSTANCE"]
+          database_env = {
+              "PGHOST": f"/cloudsql/{connection_name}",
+              "PGPORT": "5432",
+              "PGDATABASE": os.environ["WAS_DB_NAME"],
+              "PGUSER": os.environ["WAS_DB_USER"],
+          }
+          if pool_max_size := os.environ.get("DB_POOL_MAX_SIZE"):
+              database_env["DB_POOL_MAX_SIZE"] = pool_max_size
+          # 모든 리비전 인스턴스가 같은 서명 키를 읽도록 버전을 고정한다.
+          secret_refs = {
+              "PGPASSWORD": (os.environ["WAS_DB_PASSWORD_SECRET"], "latest"),
+              "READER_COOKIE_SECRET": (os.environ["WAS_READER_COOKIE_SECRET"], "1"),
+          }
+          secret_env = [
+              {"name": env_name, "valueFrom": {"secretKeyRef": {"name": secret, "key": version}}}
+              for env_name, (secret, version) in secret_refs.items()
+          ]
+          service = {
+              "apiVersion": "serving.knative.dev/v1",
+              "kind": "Service",
+              "metadata": {"name": "news-feed"},
+              "spec": {
+                  "template": {
+                      "metadata": {
+                          "annotations": {
+                              "run.googleapis.com/cloudsql-instances": connection_name,
+                              "run.googleapis.com/container-dependencies": '{"nginx":["fastapi"]}',
+                          }
+                      },
+                      "spec": {
+                          "serviceAccountName": os.environ["WAS_SERVICE_ACCOUNT"],
+                          "containers": [
+                              {
+                                  "name": "nginx",
+                                  "image": os.environ["NGINX_IMAGE"],
+                                  "ports": [{"containerPort": 80}],
+                              },
+                              {
+                                  "name": "fastapi",
+                                  "image": os.environ["WAS_IMAGE"],
+                                  "startupProbe": {"tcpSocket": {"port": 8000}},
+                                  "env": [
+                                      {"name": name, "value": value}
+                                      for name, value in database_env.items()
+                                  ] + secret_env,
+                              },
+                          ],
+                      },
+                  },
+              },
+          }
+          # JSON도 YAML로 읽히므로 환경변수의 특수문자를 안전하게 전달한다.
+          Path(sys.argv[1]).write_text(json.dumps(service, indent=2), encoding="utf-8")
+          PYTHON
+
+          gcloud run services replace "$service_config" \
+            --project "$GCP_PROJECT" \
+            --region "$RUN_REGION" \
+            --quiet

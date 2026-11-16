@@ -7,9 +7,12 @@ venv/
 __pycache__/
 *.py[cod]
 .DS_Store
-generate/recommand_env.yml
-generate/recommand_env.yaml
-generate/recommand_pip.txt
+
+# Local generation workspace
+/generate/
+
+# Local logging implementation
+/logging/
 
 # Local models and generated artifacts
 .cache/
@@ -17,5 +20,4 @@ output/
 catboost_info/
 
 # Study documents are not part of this repository import
-docs/
-/generate/docs/
+/docs/
