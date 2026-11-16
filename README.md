@@ -8,7 +8,7 @@ ASAC 뉴스 추천 시스템의 FastAPI 서버입니다. 뉴스 피드와 카테
 | --- | --- |
 | [`app/`](app/) | FastAPI 라우트, PostgreSQL 연결·쿼리 |
 | [`compose.yaml`](compose.yaml) | 로컬 PostgreSQL 18, FastAPI, Nginx 실행 구성 |
-| [`Dockerfile`](Dockerfile) · [`nginx/`](nginx/) | FastAPI 이미지와 Cloud Run용 Nginx API 프록시 |
+| [`Dockerfile`](Dockerfile) · [`nginx/`](nginx/) | FastAPI 이미지와 Cloud Run용 Nginx 정적 화면·API 프록시 |
 | [`tests/`](tests/) · [`pytest.ini`](pytest.ini) | API 테스트와 PostgreSQL 조회 통합 테스트 |
 | [`pyproject.toml`](pyproject.toml) · [`uv.lock`](uv.lock) | Python 3.14 의존성과 생성·테스트 그룹, 고정된 패키지 버전 |
 | [`generate/`](generate/) · [`exports/`](exports/) | 기사·썸네일 생성, 기사 적재, DB 백업과 복원 |
@@ -116,19 +116,29 @@ git diff --check
 
 로컬에서 PostgreSQL 통합 테스트를 실행하려면 테스트용 임시 PostgreSQL의 접속 문자열을 `POSTGRES_TEST_DSN`으로 지정합니다. 지정하지 않으면 PostgreSQL을 사용하는 테스트를 건너뜁니다.
 
-[백엔드 CI](.github/workflows/ci.yml)는 PR과 `main` 푸시에서 테스트 전용 PostgreSQL 18을 시작하고 `pytest`를 실행합니다. PR에서는 Nginx와 FastAPI 이미지도 빌드해 [스모크 테스트](.github/scripts/smoke-containers.sh)를 실행합니다. 검사는 Nginx를 거친 FastAPI의 OpenAPI 응답과 `POST /news/feed` 정의를 확인합니다.
+[백엔드 CI](.github/workflows/ci.yml)는 PR과 `main` 푸시에서 테스트 전용 PostgreSQL 18을 시작하고 `pytest`를 실행합니다. PR에서는 Nginx와 FastAPI 이미지도 빌드해 [스모크 테스트](.github/scripts/smoke-containers.sh)를 실행합니다. 검사는 Nginx를 거친 FastAPI의 OpenAPI 응답과 `POST /news/feed` 정의, 프론트 HTML·JS·CSS 응답을 확인합니다.
 
 ## Cloud Run 배포
+
+Cloud Run용 Nginx 이미지는 릴리스 커밋의 `web/`을 포함합니다. 첫 프론트 배포는
+[Frontend CI의 480481c 빌드](https://github.com/asac-news-rec/frontend/actions/runs/43824578807)를 사용합니다.
+화면을 갱신할 때는 배포할 프론트 커밋의 성공한 CI에서 `frontend-dist-<SHA>`를 내려받고,
+`web/`에 압축을 풀어 `web/index.html`과 `web/src/`이 위치하도록 합니다. 백엔드 PR에 사용한
+프론트 커밋과 CI 링크를 기록합니다.
+
+릴리스 후 Cloud Run에 접근할 수 있는 브라우저에서 쿠키 발급, 뉴스 피드와 다음 페이지,
+카테고리, 썸네일, 좋아요 등록·해제를 확인합니다. Cloud Run은 IAM 인증을 요구합니다.
+운영에서 상대 경로 썸네일이나 행동 수집을 쓰려면 각 경로를 제공하는 서비스와 연결해야 합니다.
 
 [백엔드 CD](.github/workflows/cd.yml)는 GitHub에서 백엔드 릴리스를 공개하면 실행됩니다.
 
 1. 릴리스 태그의 커밋이 `main` 푸시에서 CI를 통과했는지 확인합니다. 통과한 백엔드
    커밋을 가져옵니다.
-2. FastAPI와 Nginx API 프록시 이미지를 만든 뒤 두 이미지로 스모크 테스트를 실행합니다.
+2. FastAPI와 프론트 정적 파일을 담은 Nginx 이미지를 만든 뒤 두 이미지로 스모크 테스트를 실행합니다.
 3. Google Cloud에 인증하고 이미지를 Artifact Registry에 업로드합니다.
 4. 두 이미지 주소, 실행 계정과 DB 연결이 포함된 서비스 설정을 생성해 `gcloud run services replace`로 적용합니다.
 
-Cloud Run 서비스 이름은 `news-feed`입니다. 이 서비스의 화면 경로 `/`는 HTTP 404를 반환합니다. 한 인스턴스에서 Nginx가 80번 포트로 HTTP 요청을 받고, `/api/` 요청은 같은 인스턴스의 FastAPI `127.0.0.1:8000`으로 전달합니다. FastAPI는 Cloud SQL PostgreSQL에 연결하고, Cloud Run이 Secret Manager에서 읽은 비밀번호를 `PGPASSWORD` 환경변수로 받습니다.
+Cloud Run 서비스 이름은 `news-feed`입니다. Nginx는 `/`에서 뉴스 프론트 화면을 제공합니다. 한 인스턴스에서 Nginx가 80번 포트로 HTTP 요청을 받고, `/api/` 요청은 같은 인스턴스의 FastAPI `127.0.0.1:8000`으로 전달합니다. FastAPI는 Cloud SQL PostgreSQL에 연결하고, Cloud Run이 Secret Manager에서 읽은 비밀번호를 `PGPASSWORD` 환경변수로 받습니다.
 
 백엔드 저장소의 **Settings → Secrets and variables → Actions**에서 워크플로가 참조하는 값을 설정합니다.
 

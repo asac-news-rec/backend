@@ -35,3 +35,11 @@ if [[ "$http_status" != 200 ]]; then
 fi
 jq --exit-status '.paths["/news/feed"].post | type == "object"' "$schema_file" >/dev/null
 echo "Nginx forwarded the API request to FastAPI."
+
+# 정적 진입점과 실제 번들을 Nginx에서 함께 확인한다.
+curl --fail --silent --show-error "http://$nginx_address/" --output "$RUNNER_TEMP/news-index.html"
+for asset in src/app.js src/style.css; do
+  grep -F "="./$asset"" "$RUNNER_TEMP/news-index.html" >/dev/null
+  curl --fail --silent --show-error "http://$nginx_address/$asset" --output /dev/null
+done
+echo "Nginx served the frontend HTML, JavaScript and CSS."
