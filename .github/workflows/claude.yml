@@ -1,0 +1,50 @@
+name: Claude Code PR Review
+
+on:
+  pull_request:
+    types: [opened, ready_for_review]
+
+jobs:
+  claude-review:
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude PR review
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_SETUP_TOKEN }}
+          prompt: |
+            Review this pull request for the ASAC news recommendation backend. Write the review summary and inline comments in formal Korean.
+
+            Prioritize concrete bugs and regressions. Focus on the parts changed by the PR:
+            - FastAPI: Check request validation, response fields, error status codes, and compatibility with the frontend for the news feed, categories, reader IDs, and likes.
+            - PostgreSQL: Check query filters, pagination, newest-first ordering, and transaction behavior. Verify that repeated like and unlike requests keep the state and history consistent.
+            - Feed logging: Check whether log failures affect the API response and whether the change exposes credentials or unnecessary personal data.
+            - Nginx and Cloud Run: Check /api/ forwarding to FastAPI, container ports and startup order, Cloud SQL connectivity, and Secret Manager references when those settings change.
+            - Verification: Check that relevant pytest, PostgreSQL integration, or Docker smoke tests cover the changed behavior.
+
+            Understanding check:
+            - Add 1-3 inline review comments that ask concrete understanding-check questions about the core logic implemented in this PR.
+            - Each question must be attached to the most relevant changed line in the diff. Do not put understanding-check questions only in the final summary.
+            - Ask only about logic the author must understand to safely own, maintain, or operate this change.
+            - Good question targets include behavior changes, edge cases, failure modes, state transitions, data contracts, rollout/rollback impact, and operational assumptions.
+            - Do not ask generic best-practice trivia. Questions must be grounded in the actual PR diff.
+            - Do not include the answer in the comment.
+            - If the PR is trivial, docs-only, formatting-only, or mechanically obvious, do not add understanding-check comments.
+            - Prefix each understanding-check inline comment with "이해도 확인:".
+            - The author is expected to answer in the same inline thread, validate the answer with a local agent if needed, and then resolve the thread.
+          # 모델은 11/5 멘토 요청에 따라 claude-opus-5-5로 올렸다.
+          claude_args: |
+            --model "claude-opus-5-5"
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"

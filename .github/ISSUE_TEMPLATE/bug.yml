@@ -1,0 +1,57 @@
+name: Bug
+description: 뉴스 API, DB 조회·적재, Nginx 및 배포 과정의 오류를 보고합니다.
+title: "[BUG] "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: 현상
+      description: 실제로 받은 응답이나 오류 메시지와 함께 문제를 적어 주세요.
+      placeholder: 예) 뉴스 피드에서 증권을 선택했는데 부동산 기사도 함께 반환됩니다.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 재현 방법
+      description: 문제가 발생하는 순서를 적어 주세요. API 문제라면 요청 메서드, 경로, 입력값을 포함해 주세요.
+      placeholder: |
+        1. POST /news/feed에 대분류 경제, 소분류 증권을 지정해 요청합니다.
+        2. 응답에 포함된 기사의 소분류를 확인합니다.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 기대 동작
+      description: 정상 동작이라면 어떤 결과가 나와야 하는지 적어 주세요.
+      placeholder: 예) 경제 카테고리의 증권 기사만 반환됩니다.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: 영향받는 컴포넌트
+      multiple: true
+      options:
+        - 뉴스 API
+        - PostgreSQL·기사 적재
+        - 피드 로그
+        - Nginx
+        - CI/CD·Cloud Run
+        - 문서
+        - 기타
+    validations:
+      required: false
+
+  - type: textarea
+    id: reproduction-notes
+    attributes:
+      label: 재현 참고자료
+      description: 재현에 도움이 되는 실행 환경, Actions 실행 링크, 응답 본문이나 관련 로그가 있으면 남겨 주세요.
+    validations:
+      required: false

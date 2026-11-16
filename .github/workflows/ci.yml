@@ -1,0 +1,82 @@
+# CI: PR을 올리거나 main에 머지되면 테스트를 자동 실행한다.
+# CI 검사에는 GCP 인증이 필요 없다.
+name: backend-ci
+
+on:
+  # PR을 열거나 PR 브랜치에 새 커밋이 올라오면 검사한다.
+  pull_request:
+  # PR 머지 등으로 main에 들어온 실제 커밋도 다시 검사한다.
+  push:
+    branches: [main]
+
+# 같은 브랜치에 연속으로 push하면 이전 실행은 취소한다.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  # 실행기가 GitHub 저장소의 코드를 읽을 수 있게 한다.
+  contents: read
+
+jobs:
+  test:
+    # GitHub가 제공하는 Ubuntu 실행기에서 최대 10분간 검사한다.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      # 이 작업에서 사용할 테스트 전용 PostgreSQL이다.
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: news_test
+          POSTGRES_PASSWORD: ci-test-only
+          POSTGRES_DB: newsdb_test
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U news_test -d newsdb_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      # 이번 이벤트에서 검사할 Git 커밋을 실행기로 가져온다.
+      - uses: actions/checkout@v4
+
+      # GitHub 실행기에 지정한 버전의 uv를 설치한다.
+      - name: Install uv
+        uses: astral-sh/setup-uv@v9.0.0
+        with:
+          version: "0.13.7"
+
+      # uv로 WAS와 같은 Python 3.14를 준비한다. uuid.uuid7은 3.14부터 지원한다.
+      - name: Install Python 3.14
+        run: uv python install 3.14
+
+      # pyproject.toml의 WAS 의존성과 test 그룹을 설치한다.
+      - name: Install test dependencies
+        run: uv sync --locked --group test --no-install-project
+
+      # 기존 API 테스트와 실제 PostgreSQL 조회 테스트를 실행한다.
+      - name: Run pytest
+        env:
+          POSTGRES_TEST_DSN: postgresql://news_test:ci-test-only@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/newsdb_test
+        run: uv run --no-sync python -m pytest
+
+  container-smoke:
+    name: Docker smoke test
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # Cloud Run 배포와 같은 Dockerfile 및 플랫폼으로 두 이미지를 빌드한다.
+      - name: Build FastAPI and Nginx images
+        run: |
+          docker build --platform linux/amd64 -t news-feed:pr-check .
+          docker build --platform linux/amd64 -f nginx/Dockerfile -t news-web:pr-check .
+
+      - name: Check the FastAPI response through Nginx
+        run: bash .github/scripts/smoke-containers.sh news-feed:pr-check news-web:pr-check

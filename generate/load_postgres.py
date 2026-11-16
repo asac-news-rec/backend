@@ -40,6 +40,15 @@ CREATE TABLE IF NOT EXISTS public.news_articles (
 )
 """
 
+# 전체 피드와 카테고리별 피드의 최신순 조회에 사용한다.
+CREATE_ARTICLE_INDEXES = """
+CREATE INDEX IF NOT EXISTS news_articles_published_at_id_idx
+ON public.news_articles (published_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS news_articles_category_published_at_id_idx
+ON public.news_articles (category, published_at DESC, id DESC);
+"""
+
 CREATE_LIKES_TABLE = """
 CREATE TABLE IF NOT EXISTS public.article_likes (
     reader_id TEXT NOT NULL,
@@ -61,8 +70,9 @@ CREATE TABLE IF NOT EXISTS public.article_like_history (
 
 
 def ensure_schema(cursor):
-    """기사·좋아요 상태·이력 테이블을 준비합니다. 기존 데이터는 수정하지 않습니다."""
+    """기사·좋아요 상태·이력 테이블과 기사 조회 인덱스를 준비합니다."""
     cursor.execute(CREATE_TABLE)
+    cursor.execute(CREATE_ARTICLE_INDEXES)
     cursor.execute(CREATE_LIKES_TABLE)
     cursor.execute(CREATE_LIKE_HISTORY_TABLE)
 

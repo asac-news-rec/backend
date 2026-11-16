@@ -12,7 +12,7 @@ Backend API: recommendation serving and event collection
 | --- | --- |
 | `generate_with_thumbnail.py` | Gemma/Ollama 또는 Haiku로 기사·영문 이미지 프롬프트 생성, SDXL로 실사풍 PNG 생성 |
 | `load_postgres.py` | 기사 JSONL 검증 및 PostgreSQL upsert |
-| `../requirements.txt` | 기사·이미지 생성 및 PostgreSQL 적재 의존성 |
+| `../pyproject.toml` | 기사·이미지 생성 및 PostgreSQL 적재 의존성 |
 | `news_category.csv` | 기사 대분류·중분류 |
 | `publisher.csv` | 언론사 52개, 기사마다 무작위 선택 |
 | `.gitignore` | 모델 캐시·실행 결과·비밀정보 등 Git 제외 |
@@ -25,7 +25,7 @@ Backend API: recommendation serving and event collection
 | Ollama | 로컬 텍스트 모델을 실행하는 서버 | Ollama 설치 후 실행 |
 | Gemma 3 4B | 기사 본문과 영문 이미지 프롬프트 작성 | `ollama pull gemma3:4b` |
 | SDXL | 이미지 프롬프트를 받아 썸네일 생성 | 첫 이미지 생성 시 코드가 모델 가중치 다운로드 |
-| Diffusers·PyTorch | Python 안에서 SDXL 실행 | `../requirements.txt`로 설치 |
+| Diffusers·PyTorch | Python 안에서 SDXL 실행 | `uv sync --group generation`으로 설치 |
 | PostgreSQL | 생성된 기사를 DB에 적재할 때 사용 | 루트의 Docker Compose 또는 별도 PostgreSQL 서버 |
 
 **SDXL은 Stable Diffusion XL의 약자이며 Stable Diffusion 계열의 이미지 생성 모델입니다.**
@@ -56,15 +56,16 @@ cd /Users/taewonkim/Documents/final_project/backend/generate
 conda create -n recommand314 python=3.14
 conda activate recommand314
 
-python -m pip install -r ../requirements.txt
+uv sync --locked --python "$(command -v python)" --group generation
+source ../.venv/bin/activate
 ```
 
 이미 `recommand314` 환경을 사용 중이면 환경 생성은 생략하고 활성화·패키지 설치만 합니다.
-`python -m pip`는 현재 선택한 Python 환경에 패키지를 설치합니다.
+`uv sync`는 상위 프로젝트의 `.venv`에 패키지를 설치합니다.
 Python 패키지 설치만으로 Ollama 프로그램이나 Gemma 모델까지 설치되지는 않습니다.
 
 `recommand_env.yml`은 Python 3.14 Conda 환경 설정이며, 개인 PC 경로는 포함하지 않습니다.
-위 설치는 WAS 패키지까지 함께 설치합니다. backend 루트에서는 `python -m pip install -r requirements.txt`를 실행합니다.
+위 설치는 WAS 패키지까지 함께 설치합니다.
 `recommand_pip.txt`는 현재 환경의 전체 버전 스냅샷으로, 학습·분석·Jupyter 패키지까지 포함하므로 일반 실행에 전부 필요한 목록은 아닙니다.
 기존 환경에서 `python --version`으로 3.14인지 확인하세요. 환경 파일을 편집하는 것만으로 실행 중인 Python 버전이 바뀌지는 않습니다.
 
@@ -212,7 +213,8 @@ Haiku를 선택하면 Ollama 대신 Anthropic API로 텍스트를 생성합니�
 ## PostgreSQL 적재
 
 ```bash
-python -m pip install -r ../requirements.txt
+uv sync --locked --group generation
+source ../.venv/bin/activate
 
 # 날짜별 전체 JSONL 검증(DB 쓰기 없음)
 python -m load_postgres --date 2026-11-02 --validate-only
@@ -237,11 +239,11 @@ python load_postgres.py --input /path/to/articles.jsonl \
 설정 우선순위는 CLI 옵션 > 기존 환경변수 > .env > 기본값입니다.
 비밀번호는 .env·환경변수의 `PGPASSWORD` 또는 `~/.pgpass`로 전달하며 코드·Git에 저장하지 않습니다.
 접속 설정에는 `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`도 사용할 수 있습니다.
-적재 실행은 한 트랜잭션에서 아래 테이블을 준비하고 기사만 upsert합니다.
+적재 실행은 한 트랜잭션에서 아래 테이블과 기사 조회 인덱스를 준비하고 기사만 upsert합니다.
 
 | 테이블 | 생성 컬럼·키 |
 |---|---|
-| public.news_articles | 기존 기사 19개 컬럼, id 기본키 |
+| public.news_articles | 기존 기사 19개 컬럼, id 기본키, 전체·카테고리별 최신순 조회 인덱스 |
 | public.article_likes | reader_id·article_id 복합 기본키, liked_at |
 | public.article_like_history | change_id UUID 기본키, reader_id, article_id, action, changed_at |
 
@@ -253,6 +255,13 @@ python load_postgres.py --input /path/to/articles.jsonl \
 CREATE TABLE IF NOT EXISTS는 이미 있는 테이블의 정의를 자동 변경하지 않습니다. 기존 스키마가 다르면 별도 변경 SQL이 필요합니다.
 
 기존 DB의 컬럼을 삭제하거나 기존 raw_article을 일괄 정리하는 구문은 적재 경로에서 제거했습니다.
+
+### 기존 Cloud SQL에 기사 조회 인덱스 추가
+
+`newsdb`의 `public.news_articles`를 이미 SQL로 만든 환경에서는
+테이블 소유 권한이 있는 계정으로 `load_postgres.py`의 `CREATE_ARTICLE_INDEXES` 안에 있는
+두 SQL을 실행합니다. 기존 기사 데이터 위에 인덱스를 추가합니다.
+일반 `CREATE INDEX`는 생성하는 동안 테이블 쓰기를 막으므로 기사 적재와 겹치지 않게 실행합니다.
 
 ### 로컬 이미지 URL 자동 변환
 
