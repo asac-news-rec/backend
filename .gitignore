@@ -8,8 +8,23 @@ __pycache__/
 *.py[cod]
 .DS_Store
 
-# Local generation workspace
-/generate/
+# GCP 생성기 소스·빌드 파일만 포함합니다.
+/generate/*
+!/generate/article_schema.py
+!/generate/generate.py
+!/generate/load_postgres.py
+!/generate/news_category.csv
+!/generate/publisher.csv
+!/generate/Dockerfile
+!/generate/Dockerfile.dockerignore
+!/generate/README.md
+
+# 로컬 실행 환경·이전 생성기·테스트 출력물은 PC에만 보관합니다.
+/generate/local_airflow/
+/generate/local_generate/
+/generate/test-output/
+/generate/output_with_thumbnail/
+/news-output/
 
 # Local logging implementation
 /logging/

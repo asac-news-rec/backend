@@ -28,10 +28,10 @@ docker compose exec -T postgres sh -c \
   < exports/newsdb_2026-11-04.dump
 ```
 
-오늘 생성 원본과 이미지는 `generate/output_with_thumbnail/2026-11-04/`에 있습니다. 백업의 이미지 URL은 로컬 `http://localhost:8001` 기준이므로, 프로젝트 루트에서 다음 명령으로 이미지를 제공합니다.
+오늘 생성 원본과 이미지는 `generate/local_generate/output_with_thumbnail/2026-11-04/`에 있습니다. 백업의 이미지 URL은 로컬 `http://localhost:8001` 기준이므로, 프로젝트 루트에서 다음 명령으로 이미지를 제공합니다.
 
 ```bash
-python -m http.server 8001 --bind 127.0.0.1 --directory generate/output_with_thumbnail
+python -m http.server 8001 --bind 127.0.0.1 --directory generate/local_generate/output_with_thumbnail
 ```
 
 전체 백업 생성 명령(프로젝트 루트에서 실행):
@@ -161,7 +161,7 @@ LIMIT 10;
 ```bash
 python -m http.server 8001 \
   --bind 127.0.0.1 \
-  --directory generate/output_with_thumbnail
+  --directory generate/local_generate/output_with_thumbnail
 ```
 
 이 터미널은 이미지를 확인하는 동안 켜 둡니다.

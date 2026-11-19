@@ -13,6 +13,16 @@ dependencies = [
 ]
 
 [dependency-groups]
+# OpenRouter 배치 이미지 전용 의존성
+openrouter = [
+    "pydantic==2.14.2",
+    "requests>=2.32,<3",
+    "psycopg[binary]==3.3.7",
+    "python-dotenv==1.2.4",
+    "pillow==13.0.0",
+    "google-cloud-secret-manager>=2.32.0",
+    "google-cloud-storage>=3.17.1",
+]
 # 기사·이미지 생성에 사용하는 패키지
 generation = [
     "langchain-anthropic==1.7.9",

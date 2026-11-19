@@ -77,7 +77,7 @@ services:
     volumes:
       # PC 경로 : 컨테이너 경로 : 접근 방식 -> 읽기 전용(read-only)
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./generate/output_with_thumbnail:/srv/images:ro
+      - ./generate/local_generate/output_with_thumbnail:/srv/images:ro
       # 옆의 frontend 저장소에서 npm run build로 생성한 파일을 연결한다.
       - type: bind
         source: ../frontend/dist

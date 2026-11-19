@@ -1,0 +1,10 @@
+# 백엔드 루트를 빌드 컨텍스트로 사용합니다.
+**
+!pyproject.toml
+!uv.lock
+!generate/
+!generate/generate.py
+!generate/article_schema.py
+!generate/load_postgres.py
+!generate/news_category.csv
+!generate/publisher.csv

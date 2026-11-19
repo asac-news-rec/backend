@@ -61,11 +61,11 @@ Compose로 PostgreSQL을 시작하면 DB와 계정이 준비됩니다. **기사�
 
 ```bash
 uv sync --locked --group generation --no-install-project
-(cd generate && ../.venv/bin/python -m load_postgres --date 2026-11-02 --validate-only)
-(cd generate && ../.venv/bin/python -m load_postgres --date 2026-11-02)
+(cd generate && ../.venv/bin/python -m load_postgres --output-root local_generate/output_with_thumbnail --date 2026-11-02 --validate-only)
+(cd generate && ../.venv/bin/python -m load_postgres --output-root local_generate/output_with_thumbnail --date 2026-11-02)
 ```
 
-날짜는 적재할 데이터 폴더에 맞게 바꿉니다. 먼저 `--validate-only`로 JSONL을 검증하고 통과한 뒤 실제 적재 명령을 실행합니다. 생성 모델 설정과 썸네일 URL 지정은 [기사·이미지 생성 및 적재 안내](generate/README.md), 기존 DB 백업을 사용할 때는 [백업 복원 안내](exports/README.md)를 참고하세요.
+날짜는 적재할 데이터 폴더에 맞게 바꿉니다. 먼저 `--validate-only`로 JSONL을 검증하고 통과한 뒤 실제 적재 명령을 실행합니다. 생성 모델 설정과 썸네일 URL 지정은 [기사·이미지 생성 및 적재 안내](generate/local_generate/README.md), 기존 DB 백업을 사용할 때는 [백업 복원 안내](exports/README.md)를 참고하세요.
 
 ### 익명 독자 쿠키
 
