@@ -1,0 +1,104 @@
+name: generator-cd
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+concurrency:
+  group: news-generator-publish
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  GCP_PROJECT: ${{ vars.GCP_PROJECT }}
+  AR_REGION: ${{ vars.AR_REGION }}
+  AR_REPOSITORY: ${{ vars.AR_REPOSITORY }}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify generator CI succeeded for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "::error::수동 업로드는 main 브랜치에서 실행하세요."
+            exit 1
+          fi
+          commit="$(git rev-parse HEAD)"
+          ci_run_url="$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/generator-ci.yml/runs" \
+            -f branch=main -f event=push -f head_sha="$commit" -f status=success \
+            -F per_page=1 --jq '.workflow_runs[0].html_url // empty')"
+          if [[ -z "$ci_run_url" ]]; then
+            echo "::error::해당 커밋의 main 생성기 CI 성공 기록이 없습니다. CI 완료 후 다시 실행하세요."
+            exit 1
+          fi
+          echo "확인한 CI 실행: $ci_run_url"
+
+      - name: Build generator image
+        run: |
+          set -euo pipefail
+          : "${GCP_PROJECT:?Set GCP_PROJECT}" "${AR_REGION:?Set AR_REGION}" "${AR_REPOSITORY:?Set AR_REPOSITORY}"
+          commit="$(git rev-parse HEAD)"
+          image="${AR_REGION}-docker.pkg.dev/${GCP_PROJECT}/${AR_REPOSITORY}/news-generator:${commit}"
+          docker build --platform linux/amd64 -f generate/Dockerfile -t "$image" .
+          printf 'GENERATOR_IMAGE=%s\n' "$image" >> "$GITHUB_ENV"
+
+      - name: Check generator image
+        run: bash .github/scripts/smoke-generator.sh "$GENERATOR_IMAGE"
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          credentials_json: '${{ secrets.GCP_SA_KEY }}'
+
+      - uses: google-github-actions/setup-gcloud@v3
+
+      - name: Publish generator image
+        run: |
+          set -euo pipefail
+          gcloud auth configure-docker "${AR_REGION}-docker.pkg.dev" --quiet
+          docker push "$GENERATOR_IMAGE"
+          {
+            echo '## 뉴스 생성기 이미지'
+            echo
+            echo '업로드한 주소를 pipeline 저장소의 이미지 갱신 PR에 전달합니다.'
+            echo
+            printf '`%s`\n' "$GENERATOR_IMAGE"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check pipeline repository credential
+        env:
+          PIPELINE_REPO_TOKEN: ${{ secrets.PIPELINE_REPO_TOKEN }}
+        run: |
+          if [[ -z "$PIPELINE_REPO_TOKEN" ]]; then
+            echo "::error::data-ml-pipeline 쓰기 권한이 있는 PIPELINE_REPO_TOKEN Secret을 등록하세요."
+            exit 1
+          fi
+
+      - name: Check out pipeline deployment configuration
+        uses: actions/checkout@v4
+        with:
+          repository: asac-news-rec/data-ml-pipeline
+          ref: main
+          path: pipeline-deploy
+          token: ${{ secrets.PIPELINE_REPO_TOKEN }}
+          persist-credentials: false
+
+      - name: Open pipeline image update pull request
+        working-directory: pipeline-deploy
+        env:
+          GH_TOKEN: ${{ secrets.PIPELINE_REPO_TOKEN }}
+        run: bash "$GITHUB_WORKSPACE/.github/scripts/open-generator-image-pr.sh"

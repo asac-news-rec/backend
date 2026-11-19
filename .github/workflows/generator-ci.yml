@@ -1,0 +1,29 @@
+name: generator-ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  generator-smoke:
+    name: Generator image smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Build generator image
+        run: docker build --platform linux/amd64 -f generate/Dockerfile -t news-generator:ci-check .
+
+      - name: Check generator entry point and data files
+        run: bash .github/scripts/smoke-generator.sh news-generator:ci-check
