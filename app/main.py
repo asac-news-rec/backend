@@ -5,10 +5,10 @@ import os
 from typing import Annotated
 from uuid import uuid7
 from pydantic import AwareDatetime, BaseModel, Field, field_serializer
-from .repository import ArticleNotFound, fetch_news, set_like, fetch_big_category, fetch_sub_category
+from .repository import ArticleNotFound, fetch_news, set_like, fetch_big_category, fetch_sub_category, fetch_news_detail
 
 import psycopg
-from fastapi import Cookie, Depends, FastAPI, HTTPException, Request, Response
+from fastapi import APIRouter, Cookie, Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from itsdangerous import BadData, URLSafeTimedSerializer
 from psycopg_pool import PoolTimeout
@@ -35,6 +35,9 @@ async def lifespan(_app: FastAPI):
 
 # root_path는 외부에서 /api 접두사를 통해 접근한다는 정보
 app = FastAPI(root_path="/api", lifespan=lifespan)
+
+# 업무 API는 버전별 라우터로 관리합니다. /api는 Nginx의 외부 접두사입니다.
+api_v1 = APIRouter()
 
 
 @app.exception_handler(PoolTimeout)
@@ -73,6 +76,37 @@ def require_reader_id(
         raise HTTPException(status_code=401, detail="익명 독자 인증이 필요합니다.")
     return reader_id
 
+# article_id, title, paragraphs, is_liked 등
+# fetch_news_detail()이 반환하는 필드로 별도 정의
+class NewsDetailResponse(BaseModel):
+    request_id: str
+    served_at: datetime
+    content: ArticleDetail
+
+class ArticleDetail(BaseModel):
+    article_id: str
+    title: str
+    subtitle: str | None
+    summary: str | None
+    paragraphs: list[str]
+    tags: list[str]
+    category: str
+    subcategory: str | None
+    published_at: datetime = Field(json_schema_extra={"format": "date-time"})
+    author: str | None
+    publisher: str | None
+    language: str | None
+    is_synthetic: bool
+    url: str | None
+    image_url: str | None
+    image_caption: str | None
+    is_liked: bool
+
+    @field_serializer("published_at", when_used="json")
+    def serialize_published_at(self, value: datetime) -> str:
+        # 기존 JSON의 시간대 표기(+00:00 등)를 유지한다.
+        return value.isoformat()
+
 
 class FeedCursor(BaseModel):
     published_at: AwareDatetime
@@ -91,7 +125,7 @@ class FeedItem(BaseModel):
     title: str
     subtitle: str | None
     summary: str | None
-    paragraphs: list[str]
+    # paragraphs: list[str]  # 본문은 상세 조회 응답에만 포함합니다.
     tags: list[str]
     category: str
     subcategory: str | None
@@ -150,8 +184,41 @@ def health():
             detail="DB연결 또는 query실행에 실패하였습니다."
             # from exc: “새로 발생시키는 예외의 원인이 원래 오류 exc다”라고 연결하는 문법
         ) from exc
+
+@api_v1.get("/news/{article_id}", response_model=NewsDetailResponse)
+def news_feed_detail(
+    article_id: str,
+    reader_id: Annotated[str, Depends(require_reader_id)],
+):
+    try:
+        with connect() as conn:
+            content = fetch_news_detail(
+                conn,
+                article_id,
+                reader_id
+            )
+    except psycopg.Error as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="뉴스조회에 실패하였습니다.",
+        ) from exc
     
-@app.post("/news/feed", response_model=FeedResponse)
+    if content is None:
+        raise HTTPException(
+            status_code=404,
+            detail="기사를 찾을 수 없습니다.",
+        )
+    response = {
+        "request_id": str(uuid7()),
+        "served_at": datetime.now(timezone.utc).isoformat(),
+        "content": content,
+    }
+
+    return response
+
+
+
+@api_v1.post("/news/feed", response_model=FeedResponse)
 def news_feed(
     body: FeedRequest,
     reader_id: Annotated[str, Depends(require_reader_id)],
@@ -232,17 +299,17 @@ def change_like(article_id: str, reader_id: str, desired: bool):
         ) from exc
 
 
-@app.put("/news/{article_id}/like")
+@api_v1.put("/news/{article_id}/like")
 def like(article_id: str, reader_id: Annotated[str, Depends(require_reader_id)]):
     return change_like(article_id, reader_id, True)
 
 
-@app.delete("/news/{article_id}/like")
+@api_v1.delete("/news/{article_id}/like")
 def unlike(article_id: str, reader_id: Annotated[str, Depends(require_reader_id)]):
     return change_like(article_id, reader_id, False)
 
 
-@app.post("/user/anonymous")
+@api_v1.post("/user/anonymous")
 def create_anonymous_user(
     response: Response,
     token: Annotated[str | None, Cookie(alias=READER_COOKIE)] = None,
@@ -264,7 +331,7 @@ def create_anonymous_user(
     return {"reader_id": reader_id}
 
 
-@app.post("/category", response_model=CategoryResponse)
+@api_v1.post("/category", response_model=CategoryResponse)
 def call_category():
     try:
         with connect() as conn:
@@ -277,7 +344,7 @@ def call_category():
     return {"category_list": [row["category"] for row in rows]}
 
 
-@app.post("/subcategory", response_model=SubcategoryResponse)
+@api_v1.post("/subcategory", response_model=SubcategoryResponse)
 def call_subcategory(body: SubcategoryRequest):
     try:
         with connect() as conn:
@@ -288,3 +355,8 @@ def call_subcategory(body: SubcategoryRequest):
             detail="소분류 조회에 실패했습니다.",
         ) from exc
     return {"sub_category_list": [row["subcategory"] for row in rows]}
+
+
+app.include_router(api_v1, prefix="/v1")
+# 기존 프론트의 경로를 유지하되 OpenAPI 문서에서는 v1만 표시합니다.
+app.include_router(api_v1, include_in_schema=False)

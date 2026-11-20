@@ -33,5 +33,5 @@ if [[ "$http_status" != 200 ]]; then
   echo "Expected HTTP 200 from Nginx, got $http_status" >&2
   exit 1
 fi
-jq --exit-status '.paths["/news/feed"].post | type == "object"' "$schema_file" >/dev/null
+jq --exit-status '.paths["/v1/news/feed"].post | type == "object"' "$schema_file" >/dev/null
 echo "Nginx forwarded the API request to FastAPI."

@@ -36,7 +36,7 @@ Closes #
 ### 배포 전 컨테이너 검사
 
 - [ ] Nginx를 거친 `/api/openapi.json`이 HTTP 200을 반환한다.
-- [ ] OpenAPI 응답에 `POST /news/feed`가 정의되어 있다.
+- [ ] OpenAPI 응답에 `POST /v1/news/feed`가 정의되어 있다.
 
 ## 리뷰어 참고사항
 

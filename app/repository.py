@@ -27,7 +27,7 @@ def fetch_news(
                 a.title,
                 a.subtitle,
                 a.summary,
-                a.paragraphs,
+                -- a.paragraphs,  -- 본문은 상세 조회에서 제공합니다.
                 a.tags,
                 a.category,
                 a.subcategory,
@@ -153,3 +153,38 @@ def set_like(conn, reader_id, article_id, desired):
         "is_liked": desired,
         "changed": changed,
     }
+
+def fetch_news_detail(
+    conn,
+    article_id :str,
+    reader_id:str
+):
+
+    with conn.cursor() as cur:
+        cur.execute(f"""
+            SELECT
+                a.id AS article_id,
+                a.title,
+                a.subtitle,
+                a.summary,
+                a.paragraphs,
+                a.tags,
+                a.category,
+                a.subcategory,
+                a.published_at,
+                a.author,
+                a.publisher,
+                a.language,
+                a.is_synthetic,
+                a.url,
+                a.image_url,
+                a.image_caption,
+                (l.reader_id IS NOT NULL) AS is_liked
+            FROM public.news_articles AS a
+            LEFT JOIN public.article_likes AS l
+                ON l.article_id = a.id
+                AND l.reader_id = %s
+            WHERE a.id = %s
+        """, (reader_id,article_id))
+        row = cur.fetchone()
+    return row
