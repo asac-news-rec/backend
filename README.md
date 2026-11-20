@@ -40,7 +40,7 @@ docker compose ps
 로컬에서는 `.env`에서 조정하며 기본값은 `4`입니다. 풀은 DB 요청이 들어오면
 연결을 만들고 이후 요청에 재사용합니다. 연결을 3초 안에 얻지 못한 요청은 HTTP 503을 받습니다.
 
-Nginx는 `../frontend/dist/`의 HTML·CSS·JS를 제공하고 `/api/` 요청을 FastAPI에 전달합니다. 브라우저에서 쓰는 뉴스 조회 경로는 `POST /api/news/feed`입니다.
+Nginx는 `../frontend/dist/`의 HTML·CSS·JS를 제공하고 `/api/` 요청을 FastAPI에 전달합니다. 브라우저에서 쓰는 뉴스 조회 경로는 `POST /api/v1/news/feed`입니다.
 
 ### FastAPI를 직접 실행
 
@@ -69,7 +69,7 @@ uv sync --locked --group generation --no-install-project
 
 ### 익명 독자 쿠키
 
-브라우저는 먼저 `POST /api/user/anonymous`를 호출해 `news_reader` 서명 쿠키를 받습니다.
+브라우저는 먼저 `POST /api/v1/user/anonymous`를 호출해 `news_reader` 서명 쿠키를 받습니다.
 유효한 쿠키가 있으면 같은 독자 ID를 반환합니다. 피드와 좋아요 API는 이 쿠키에서
 검증한 `reader_id`를 사용하며, 쿠키가 없거나 만료됐으면 HTTP 401을 반환합니다.
 쿠키는 발급 후 30일 동안 유효합니다. 기존 브라우저는 새 쿠키를 받을 때 새 익명 ID를 발급받습니다.
@@ -88,7 +88,7 @@ uv sync --locked --group generation --no-install-project
 
 ### 뉴스 피드 페이지 조회
 
-`POST /news/feed`의 첫 요청은 서명 쿠키와 필요한 카테고리 필터를 보냅니다.
+`POST /v1/news/feed`의 첫 요청은 서명 쿠키와 필요한 카테고리 필터를 보냅니다.
 필터를 생략할 경우 JSON 본문은 `{}`입니다.
 다음 페이지가 있으면 응답의 `next_cursor`에 마지막 기사의 발행 시각과 ID,
 지금까지 반환한 기사 수가 담깁니다. 같은 필터를 유지하고 이 객체를 다음 요청의
@@ -116,7 +116,7 @@ git diff --check
 
 로컬에서 PostgreSQL 통합 테스트를 실행하려면 테스트용 임시 PostgreSQL의 접속 문자열을 `POSTGRES_TEST_DSN`으로 지정합니다. 지정하지 않으면 PostgreSQL을 사용하는 테스트를 건너뜁니다.
 
-[백엔드 CI](.github/workflows/ci.yml)는 PR과 `main` 푸시에서 테스트 전용 PostgreSQL 18을 시작하고 `pytest`를 실행합니다. PR에서는 Nginx와 FastAPI 이미지도 빌드해 [스모크 테스트](.github/scripts/smoke-containers.sh)를 실행합니다. 검사는 Nginx를 거친 FastAPI의 OpenAPI 응답과 `POST /news/feed` 정의를 확인합니다.
+[백엔드 CI](.github/workflows/ci.yml)는 PR과 `main` 푸시에서 테스트 전용 PostgreSQL 18을 시작하고 `pytest`를 실행합니다. PR에서는 Nginx와 FastAPI 이미지도 빌드해 [스모크 테스트](.github/scripts/smoke-containers.sh)를 실행합니다. 검사는 Nginx를 거친 FastAPI의 OpenAPI 응답과 `POST /v1/news/feed` 정의를 확인합니다.
 
 ## Cloud Run 배포
 
@@ -164,3 +164,37 @@ GitHub의 **Releases**에서 배포할 `main` 커밋의 CI가 성공했는지 �
 ## 협업 문서
 
 이슈·브랜치·PR 절차는 [CONTRIBUTING.md](CONTRIBUTING.md), AI 코딩 도구의 작업 지침은 [AGENTS.md](AGENTS.md)를 참고합니다.
+
+## API 버전 경로
+
+업무 API는 URL 접두사 `/v1`로 버전을 구분합니다. FastAPI의 `api_v1` 라우터에
+업무 경로를 등록하고 `app.include_router(api_v1, prefix="/v1")`로 연결합니다.
+Nginx는 `/api/` 접두사만 제거하므로 프론트에서 사용하는 주소는 다음과 같습니다.
+
+| 용도 | 메서드 | 외부 주소 | FastAPI 직접 호출 |
+| --- | --- | --- | --- |
+| 익명 독자 발급 | POST | `/api/v1/user/anonymous` | `/v1/user/anonymous` |
+| 피드 | POST | `/api/v1/news/feed` | `/v1/news/feed` |
+| 기사 상세 | GET | `/api/v1/news/{article_id}` | `/v1/news/{article_id}` |
+| 좋아요 등록 | PUT | `/api/v1/news/{article_id}/like` | `/v1/news/{article_id}/like` |
+| 좋아요 해제 | DELETE | `/api/v1/news/{article_id}/like` | `/v1/news/{article_id}/like` |
+| 대분류 | POST | `/api/v1/category` | `/v1/category` |
+| 중분류 | POST | `/api/v1/subcategory` | `/v1/subcategory` |
+
+상태 확인 `/health`와 API 문서 `/docs`·`/openapi.json`은 버전 접두사를 붙이지 않습니다.
+기존 경로는 `app`에 직접 등록해 유지하며, `include_in_schema=False`로 OpenAPI에는
+v1 업무 경로만 표시합니다. 별도 legacy 라우터는 사용하지 않습니다.
+기존 피드는 본문을 포함하는 별도 응답 모델을 사용합니다. 쿠키 이름과 인증 방식은 동일합니다.
+프론트는 별도 변경에서 새 주소로 전환할 수 있으며, 기존 경로 제거는 전환 완료 후 협의합니다.
+v2에서 호환되지 않는 변경을 도입할 때는 별도 라우터·모델을 정의해 `/v2`에 연결합니다.
+이번 변경은 로컬 코드 변경이며 실제 서비스 배포는 수행하지 않았습니다.
+백엔드만 이전 이미지로 되돌리면 새 v1·상세 경로가 없어집니다. 이미 프론트가 새 주소로
+전환했다면 기존 주소·본문 포함 피드를 사용하는 프론트 버전을 먼저 복원하고 백엔드를
+복원합니다. 기존 백엔드 이미지를 보관하며, 새 인프라와 추가 비용은 없습니다.
+
+`POST /api/news/feed`는 기존과 같이 `paragraphs`를 반환합니다.
+`POST /api/v1/news/feed`는 본문을 조회·전송하지 않습니다.
+본문은 `GET /api/v1/news/{article_id}` 상세 조회의 `content.paragraphs`에서 제공합니다.
+배포는 기존 경로를 보존하는 백엔드를 먼저 적용하고, 프론트를 v1·상세 조회로 전환하는 순서입니다.
+상세 SQL은 `tests/test_repository_postgres.py`에서 실제 PostgreSQL로 본문·독자별 좋아요·
+좋아요 해제·미존재 기사를 검증합니다. 기존 CI의 임시 PostgreSQL 환경에서 자동 실행합니다.

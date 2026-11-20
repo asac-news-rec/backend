@@ -12,7 +12,9 @@ def fetch_news(
     subcategory: str | None = None,
     *,
     after: tuple[datetime, str] | None = None,
+    include_body: bool = False,
 ):
+    body_column = "a.paragraphs," if include_body else ""
     params = [reader_id, category, category, subcategory, subcategory]
     cursor_condition = ""
     if after is not None:
@@ -27,7 +29,7 @@ def fetch_news(
                 a.title,
                 a.subtitle,
                 a.summary,
-                a.paragraphs,
+                {body_column}
                 a.tags,
                 a.category,
                 a.subcategory,
@@ -153,3 +155,38 @@ def set_like(conn, reader_id, article_id, desired):
         "is_liked": desired,
         "changed": changed,
     }
+
+def fetch_news_detail(
+    conn,
+    article_id :str,
+    reader_id:str
+):
+
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT
+                a.id AS article_id,
+                a.title,
+                a.subtitle,
+                a.summary,
+                a.paragraphs,
+                a.tags,
+                a.category,
+                a.subcategory,
+                a.published_at,
+                a.author,
+                a.publisher,
+                a.language,
+                a.is_synthetic,
+                a.url,
+                a.image_url,
+                a.image_caption,
+                (l.reader_id IS NOT NULL) AS is_liked
+            FROM public.news_articles AS a
+            LEFT JOIN public.article_likes AS l
+                ON l.article_id = a.id
+                AND l.reader_id = %s
+            WHERE a.id = %s
+        """, (reader_id,article_id))
+        row = cur.fetchone()
+    return row
