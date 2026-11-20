@@ -43,9 +43,49 @@ docker run --rm \
 
 DB 적재 시 `--write-db`, `--date`, `--run-id`, `--image-base-url`과 DB 접속 환경변수가 필요합니다. 대상 DB에는 테이블이 사전 준비돼 있어야 합니다.
 
+## JSONL 백업 수동 재적재
+
+생성기는 DB 저장 전에 JSONL을 보관합니다. DB 저장에 실패했을 때 백업 파일을
+`load_postgres.py` CLI로 다시 적재할 수 있으며 OpenRouter를 다시 호출하지 않습니다.
+같은 기사 ID는 UPDATE하고 없는 ID는 INSERT합니다. 수동 CLI는 `ensure_schema()`로
+기사·좋아요 테이블과 인덱스를 준비한 뒤 한 트랜잭션으로 적재합니다.
+일반 생성기의 `--write-db` 경로는 이 초기화를 실행하지 않으므로 GKE 테이블 준비는
+인프라 담당 범위입니다. 수동 초기화에는 대상 DB의 테이블 생성 권한이 필요합니다.
+
+백엔드 루트에서, 보관한 JSONL 하나를 먼저 검증한 뒤 같은 명령에서 `--validate-only`를
+빼면 DB에 적재합니다. 아래 경로는 실제 백업 루트·파일로 바꿉니다.
+
+```bash
+uv run --no-sync python -m generate.load_postgres \
+  --input /path/to/news-output/2026-11-19/articles-2026-11-19.jsonl \
+  --output-root /path/to/news-output \
+  --image-base-url https://storage.googleapis.com/final-project-513508-news-thumbnails/images \
+  --validate-only
+```
+
+같은 날짜의 파일 전체는 `--input ...` 대신 `--date 2026-11-19`로 선택합니다.
+DB 접속값은 기존 환경변수를 우선하고 백엔드 루트 `.env`에서 보완합니다.
+이 CLI는 Secret Manager 조회나 PNG 업로드를 하지 않습니다. 이미지가 있는 기사는
+PNG가 공개 저장소에 올라갔는지도 별도로 확인해야 합니다. 재적재 중에는 DAG를
+일시중지하고 실행 중인 생성 작업이 끝난 뒤 보관 파일을 사용합니다.
+
 GKE에서는 `PGPASSWORD_SECRET=projects/final-project-513508/secrets/news-db-password/versions/latest`를 전달합니다. 생성기가 Google 공식 Secret Manager SDK와 ADC 인증으로 비밀번호를 읽어 프로세스의 `PGPASSWORD`에 설정합니다. Pod 서비스 계정의 Workload Identity 연결과 해당 Secret에 대한 `roles/secretmanager.secretAccessor` 권한이 필요합니다. Secret 경로를 지정하면 기존 `PGPASSWORD`보다 우선합니다. 로컬에서는 `PGPASSWORD`를 직접 설정할 수 있습니다. Secret 읽기 실패 시 DB 적재 전에 오류로 종료합니다.
 
 [현재] JSONL·PNG는 지정 폴더에 저장합니다. `--thumbnail-bucket` 또는 `THUMBNAIL_BUCKET`을 지정하면 이미지가 있는 기사에서 PNG를 GCS에 업로드한 뒤 DB에 적재합니다. JSONL 백업은 PVC에 유지합니다.
+
+[현재] CLI 생성 작업이 정상 완료되면 출력 루트 바로 아래의 `YYYY-MM-DD` 폴더를
+확인해 한국 시간 기준 오늘을 포함한 최근 7일만 보관합니다. 예를 들어 11월 20일에는
+11월 14~20일 폴더를 유지하고 11월 13일 이전 폴더와 그 안의 JSONL·PNG를 삭제합니다.
+날짜 형식이 아닌 폴더와 심볼릭 링크는 건드리지 않으며, 생성과 동일한 `.articles.lock`을
+잡고 정리합니다. GCS 객체와 DB 기사는 삭제하지 않습니다. 생성 실패 시에는 정리하지
+않고, 중지 기간의 정리는 다음 성공 실행에서 수행합니다. `--date`로 오래된 날짜를
+수동 생성한 경우에도 실제 실행일 기준 보관 기간이 적용됩니다.
+
+삭제된 로컬 백업은 자동 복구되지 않으므로 별도 보관이 필요한 파일은 출력 루트 밖에
+복사합니다. 자동 정리를 되돌리려면 이전 생성기 이미지로 롤백합니다. 새 리소스나 API
+호출 비용은 없으며, PVC 2Gi 요청 용량 자체가 정리 후 자동 축소되지는 않습니다.
+썸네일 순번은 위에서 설명한 대로 보관 중인 백업의 기사 수를 기준으로 하므로,
+기간 경과 백업을 삭제하면 그 이후 집계 기준도 달라집니다.
 
 검증은 이미지 빌드와 `--help` 실행 후 실제 환경에서 생성·저장 순서로 진행합니다. 롤백은 Airflow에서 이전 이미지 버전을 지정합니다. 생성 건수와 실행 주기는 모델 사용료 및 저장 용량에 영향을 줍니다.
 
@@ -75,3 +115,8 @@ OpenRouter 키도 `OPENROUTER_API_KEY_SECRET`에 지정한 Secret Manager 버전
 예를 들어 `<output-root>/2026-11-19/images/news-123.png`를 `gs://final-project-513508-news-thumbnails/images/2026-11-19/images/news-123.png`로 업로드합니다. DB URL은 `https://storage.googleapis.com/final-project-513508-news-thumbnails/images/2026-11-19/images/news-123.png`가 됩니다. 최상위 images와 날짜 아래 images는 기존 경로 규칙을 유지한 것입니다.
 
 PNG와 JSONL은 PVC에 먼저 기록합니다. 업로드 실패 시 DB 적재 전에 종료하며, 같은 실행을 재시도하면 백업에서 기존 기사와 PNG를 재사용합니다. 이미 업로드한 객체가 있으면 해시를 비교해 같은 파일임을 확인합니다. 생성기 실행 계정에는 버킷의 images/ 경로 아래 `storage.objects.create`, `storage.objects.get` 권한이 필요합니다. 버킷 공개 읽기 설정은 인프라에서 관리합니다. 첨부받은 운영 설명을 기준으로 경로를 반영했으며 현재 버킷의 공개 설정과 실제 쓰기 권한은 배포 전에 확인해야 합니다.
+
+자동 PR 생성 도중 push는 성공했지만 PR 생성이 실패한 경우, CD 재실행은 기존 원격
+브랜치를 재사용해 PR 생성을 이어갑니다. 두 이미지 설정 파일이 이번 갱신 결과와
+같은지 비교한 뒤 재사용하며, 다르면 덮어쓰지 않고 중단합니다. 강제 push는 하지 않습니다.
+원격 브랜치 조회 자체가 실패해도 새 브랜치로 간주하지 않고 중단합니다.

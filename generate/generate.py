@@ -3,7 +3,7 @@
 import argparse
 import base64
 import csv
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import fcntl
 import hashlib
 from io import BytesIO
@@ -11,6 +11,8 @@ import json
 import os
 from pathlib import Path
 import random
+import re
+import shutil
 import uuid
 from zoneinfo import ZoneInfo
 
@@ -74,6 +76,31 @@ def save_articles(path, articles):
         temporary.replace(path)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def cleanup_old_outputs(output_root, keep_days=7):
+    """한국 날짜 기준 오늘을 포함한 최근 keep_days개의 백업만 보관합니다."""
+    if keep_days < 1:
+        raise ValueError("보관 일수는 1 이상이어야 합니다.")
+    if not output_root.exists():
+        return
+
+    oldest_date = article_timestamp().date() - timedelta(days=keep_days - 1)
+    # 생성과 같은 잠금을 사용해 JSONL·PNG를 쓰는 동안 삭제하지 않습니다.
+    with (output_root / ".articles.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        for folder in output_root.iterdir():
+            if folder.is_symlink() or not folder.is_dir():
+                continue
+            if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", folder.name):
+                continue
+            try:
+                folder_date = date.fromisoformat(folder.name)
+            except ValueError:
+                continue
+            if folder_date < oldest_date:
+                shutil.rmtree(folder)
+                print(f"보관 기간이 지난 폴더 삭제: {folder}", flush=True)
 
 
 class ArticleWithImagePrompt(Draft):
@@ -321,6 +348,7 @@ def main():
                             count=args.count, output_root=args.output_root,
                             selected_date=args.date, run_id=args.run_id,
                             image_base_url=image_base_url, thumbnail_bucket=args.thumbnail_bucket)
+        cleanup_old_outputs(args.output_root)
     except ValidationError:
         parser.exit(1, "OpenRouter 기사 응답이 기사 스키마와 일치하지 않습니다.\n")
     except (requests.RequestException, psycopg.Error, OSError, ValueError) as error:
