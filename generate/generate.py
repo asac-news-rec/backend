@@ -16,7 +16,6 @@ import shutil
 import uuid
 from zoneinfo import ZoneInfo
 
-from PIL import Image, ImageOps
 from pydantic import Field, ValidationError
 import psycopg
 import requests
@@ -163,6 +162,8 @@ def generate_article(session, model, category, subcategory, published_at):
 
 
 def save_thumbnail(session, model, prompt, path):
+    from PIL import Image, ImageOps
+
     response = openrouter_post(session, "images", {
         "model": model,
         "prompt": prompt,
@@ -348,12 +349,16 @@ def main():
                             count=args.count, output_root=args.output_root,
                             selected_date=args.date, run_id=args.run_id,
                             image_base_url=image_base_url, thumbnail_bucket=args.thumbnail_bucket)
-        cleanup_old_outputs(args.output_root)
     except ValidationError:
         parser.exit(1, "OpenRouter 기사 응답이 기사 스키마와 일치하지 않습니다.\n")
     except (requests.RequestException, psycopg.Error, OSError, ValueError) as error:
         parser.exit(1, f"뉴스 생성 실패: {error}\n")
     print(f"기사 {args.count}건 저장: {path}")
+    # 생성·업로드·DB 저장 성공과 백업 정리 결과는 별도로 보고합니다.
+    try:
+        cleanup_old_outputs(args.output_root)
+    except OSError as error:
+        print(f"경고: 오래된 백업 정리 실패: {error}", flush=True)
 
 
 if __name__ == "__main__":

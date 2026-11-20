@@ -74,31 +74,12 @@ jobs:
           {
             echo '## 뉴스 생성기 이미지'
             echo
-            echo '업로드한 주소를 pipeline 저장소의 이미지 갱신 PR에 전달합니다.'
+            echo '아래 주소를 data-ml-pipeline의 두 설정에 수동으로 반영하세요.'
             echo
             printf '`%s`\n' "$GENERATOR_IMAGE"
+            echo
+            echo '- `dags/generate_news.py`: `GENERATOR_IMAGE`'
+            echo '- `dags/pod_templates/news-generator.yaml`: 생성기 컨테이너의 `image`'
+            echo
+            echo '두 곳에 같은 주소를 넣고 pipeline 저장소의 PR을 통해 반영합니다.'
           } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Check pipeline repository credential
-        env:
-          PIPELINE_REPO_TOKEN: ${{ secrets.PIPELINE_REPO_TOKEN }}
-        run: |
-          if [[ -z "$PIPELINE_REPO_TOKEN" ]]; then
-            echo "::error::data-ml-pipeline 쓰기 권한이 있는 PIPELINE_REPO_TOKEN Secret을 등록하세요."
-            exit 1
-          fi
-
-      - name: Check out pipeline deployment configuration
-        uses: actions/checkout@v4
-        with:
-          repository: asac-news-rec/data-ml-pipeline
-          ref: main
-          path: pipeline-deploy
-          token: ${{ secrets.PIPELINE_REPO_TOKEN }}
-          persist-credentials: false
-
-      - name: Open pipeline image update pull request
-        working-directory: pipeline-deploy
-        env:
-          GH_TOKEN: ${{ secrets.PIPELINE_REPO_TOKEN }}
-        run: bash "$GITHUB_WORKSPACE/.github/scripts/open-generator-image-pr.sh"

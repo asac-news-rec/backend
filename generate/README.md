@@ -3,9 +3,9 @@
 로컬 Airflow 환경(`generate/local_airflow/`)과 이전 로컬 생성기·출력물
 (`generate/local_generate/`)은 `.gitignore`로 제외해 PC에만 보관합니다.
 GCP 생성기 이미지에는 아래 Dockerfile에 지정된 소스·CSV·의존성 파일을 사용합니다.
-이미지 갱신 보조 스크립트 `.github/scripts/update-generator-image.py`와
-`.github/scripts/open-generator-image-pr.sh`는 Git에 포함하며 생성기 CD에서 사용합니다.
-업로드 후 pipeline 저장소를 체크아웃하고 두 파일의 이미지 주소를 갱신하는 Draft PR을 생성합니다.
+생성기 CD는 이미지 빌드·검사·Artifact Registry 업로드까지 수행합니다.
+업로드 후 Actions Summary에 표시된 주소를 pipeline 저장소의 두 설정 파일에
+수동으로 반영합니다. 다른 저장소 체크아웃과 PR 자동 생성은 수행하지 않습니다.
 
 [현재] Python 3.14와 uv를 사용합니다. 루트의 `pyproject.toml`과 `uv.lock`에 정의된 `openrouter` 의존성 그룹을 설치합니다.
 
@@ -43,32 +43,6 @@ docker run --rm \
 
 DB 적재 시 `--write-db`, `--date`, `--run-id`, `--image-base-url`과 DB 접속 환경변수가 필요합니다. 대상 DB에는 테이블이 사전 준비돼 있어야 합니다.
 
-## JSONL 백업 수동 재적재
-
-생성기는 DB 저장 전에 JSONL을 보관합니다. DB 저장에 실패했을 때 백업 파일을
-`load_postgres.py` CLI로 다시 적재할 수 있으며 OpenRouter를 다시 호출하지 않습니다.
-같은 기사 ID는 UPDATE하고 없는 ID는 INSERT합니다. 수동 CLI는 `ensure_schema()`로
-기사·좋아요 테이블과 인덱스를 준비한 뒤 한 트랜잭션으로 적재합니다.
-일반 생성기의 `--write-db` 경로는 이 초기화를 실행하지 않으므로 GKE 테이블 준비는
-인프라 담당 범위입니다. 수동 초기화에는 대상 DB의 테이블 생성 권한이 필요합니다.
-
-백엔드 루트에서, 보관한 JSONL 하나를 먼저 검증한 뒤 같은 명령에서 `--validate-only`를
-빼면 DB에 적재합니다. 아래 경로는 실제 백업 루트·파일로 바꿉니다.
-
-```bash
-uv run --no-sync python -m generate.load_postgres \
-  --input /path/to/news-output/2026-11-19/articles-2026-11-19.jsonl \
-  --output-root /path/to/news-output \
-  --image-base-url https://storage.googleapis.com/final-project-513508-news-thumbnails/images \
-  --validate-only
-```
-
-같은 날짜의 파일 전체는 `--input ...` 대신 `--date 2026-11-19`로 선택합니다.
-DB 접속값은 기존 환경변수를 우선하고 백엔드 루트 `.env`에서 보완합니다.
-이 CLI는 Secret Manager 조회나 PNG 업로드를 하지 않습니다. 이미지가 있는 기사는
-PNG가 공개 저장소에 올라갔는지도 별도로 확인해야 합니다. 재적재 중에는 DAG를
-일시중지하고 실행 중인 생성 작업이 끝난 뒤 보관 파일을 사용합니다.
-
 GKE에서는 `PGPASSWORD_SECRET=projects/final-project-513508/secrets/news-db-password/versions/latest`를 전달합니다. 생성기가 Google 공식 Secret Manager SDK와 ADC 인증으로 비밀번호를 읽어 프로세스의 `PGPASSWORD`에 설정합니다. Pod 서비스 계정의 Workload Identity 연결과 해당 Secret에 대한 `roles/secretmanager.secretAccessor` 권한이 필요합니다. Secret 경로를 지정하면 기존 `PGPASSWORD`보다 우선합니다. 로컬에서는 `PGPASSWORD`를 직접 설정할 수 있습니다. Secret 읽기 실패 시 DB 적재 전에 오류로 종료합니다.
 
 [현재] JSONL·PNG는 지정 폴더에 저장합니다. `--thumbnail-bucket` 또는 `THUMBNAIL_BUCKET`을 지정하면 이미지가 있는 기사에서 PNG를 GCS에 업로드한 뒤 DB에 적재합니다. JSONL 백업은 PVC에 유지합니다.
@@ -80,12 +54,29 @@ GKE에서는 `PGPASSWORD_SECRET=projects/final-project-513508/secrets/news-db-pa
 잡고 정리합니다. GCS 객체와 DB 기사는 삭제하지 않습니다. 생성 실패 시에는 정리하지
 않고, 중지 기간의 정리는 다음 성공 실행에서 수행합니다. `--date`로 오래된 날짜를
 수동 생성한 경우에도 실제 실행일 기준 보관 기간이 적용됩니다.
+따라서 7일 보관 범위 밖의 날짜로 수동 생성에 성공하면 그 백업도 즉시 정리되며,
+이후에는 같은 `run_id`로 해당 백업을 재사용할 수 없습니다. 현재 GKE DAG는
+`catchup=False`이며 `--date`에 한국 시간으로 변환한 `data_interval_end` 날짜를 전달합니다.
+UTC 날짜인 `ds`를 사용하면 한국 시간 자정~오전 9시에 전날 폴더를 선택할 수 있으므로
+현재 한국 날짜 전달 방식을 유지합니다.
+
+정리 도중 파일 권한·디스크 오류가 발생하면 `경고: 오래된 백업 정리 실패`를 출력하되
+이미 성공한 생성·업로드·DB 적재 결과와 종료 코드는 성공으로 유지합니다. 운영자는
+경고의 원인을 확인하고, 해결 후 다음 성공 실행에서 정리하도록 합니다.
 
 삭제된 로컬 백업은 자동 복구되지 않으므로 별도 보관이 필요한 파일은 출력 루트 밖에
 복사합니다. 자동 정리를 되돌리려면 이전 생성기 이미지로 롤백합니다. 새 리소스나 API
 호출 비용은 없으며, PVC 2Gi 요청 용량 자체가 정리 후 자동 축소되지는 않습니다.
 썸네일 순번은 위에서 설명한 대로 보관 중인 백업의 기사 수를 기준으로 하므로,
 기간 경과 백업을 삭제하면 그 이후 집계 기준도 달라집니다.
+예를 들어 29건 중 3건의 백업을 지우면 집계가 26건이 되어 다음 썸네일은 신규 4건째에
+생성됩니다(삭제가 없으면 신규 1건째). 삭제 직후 주기가 어긋날 수 있으며, 이는 현재
+보관 백업 수를 기준으로 하는 방식의 제한입니다. 누적 생성 횟수를 유지하는 방식은
+별도 변경이 필요합니다.
+
+자동 검증은 `uv run --no-sync python -m pytest tests/test_generator_retention.py`로
+실행합니다. 임시 폴더에서 7일 경계·예외 경로·반복 실행과 정리 실패 시 CLI 성공,
+생성 실패 시 정리 미실행을 확인하며 실제 백업·GCS·DB는 변경하지 않습니다.
 
 검증은 이미지 빌드와 `--help` 실행 후 실제 환경에서 생성·저장 순서로 진행합니다. 롤백은 Airflow에서 이전 이미지 버전을 지정합니다. 생성 건수와 실행 주기는 모델 사용료 및 저장 용량에 영향을 줍니다.
 
@@ -97,9 +88,14 @@ GKE에서는 `PGPASSWORD_SECRET=projects/final-project-513508/secrets/news-db-pa
 
 기존 백엔드 CD와 같은 Actions Variables `GCP_PROJECT`, `AR_REGION`, `AR_REPOSITORY` 및 인증 Secret `GCP_SA_KEY`를 사용합니다. 인증 계정에는 대상 이미지 저장소의 업로드 권한이 필요합니다.
 
-이미지 주소는 `<AR_REGION>-docker.pkg.dev/<GCP_PROJECT>/<AR_REPOSITORY>/news-generator:<커밋SHA>`입니다. Actions 실행 Summary의 `뉴스 생성기 이미지`에서 실제 주소를 확인할 수 있습니다. CD는 `data-ml-pipeline`의 `dags/generate_news.py`에 있는 `GENERATOR_IMAGE`와 `dags/pod_templates/news-generator.yaml`의 생성기 컨테이너 `image`를 같은 주소로 갱신한 Draft PR을 생성합니다. PR 승인·머지 후 기존 git-sync가 Airflow에 전달하며, 자동 머지는 하지 않습니다.
+이미지 주소는 `<AR_REGION>-docker.pkg.dev/<GCP_PROJECT>/<AR_REPOSITORY>/news-generator:<커밋SHA>`입니다. 업로드 성공 후 다음 순서로 수동 반영합니다.
 
-백엔드 Actions Secret `PIPELINE_REPO_TOKEN`을 사용합니다. 토큰에는 대상 저장소의 Contents·Issues·Pull requests 읽기/쓰기 권한이 필요하며 조직 정책에 따라 승인이 필요합니다. 대상 main에는 DAG, Pod 템플릿, PR 양식이 먼저 있어야 합니다. 토큰 등록만으로 대상 파일이 생기지는 않습니다. 같은 이미지 주소가 main에 있으면 변경을 생략하고, 같은 SHA의 갱신 PR이 이미 있으면 해당 PR을 재사용합니다. 토큰 확인이나 PR 생성이 실패해도 앞서 업로드한 이미지는 유지됩니다. 실제 원격 PR 생성과 GKE 실행은 로컬 검증에 포함하지 않습니다.
+1. Actions → generator-cd → 해당 실행 → Summary의 `뉴스 생성기 이미지`에서 전체 주소를 복사합니다.
+2. `data-ml-pipeline/dags/generate_news.py`의 `GENERATOR_IMAGE`를 해당 주소로 변경합니다.
+3. `data-ml-pipeline/dags/pod_templates/news-generator.yaml`의 생성기 컨테이너 `image`에도 같은 주소를 넣습니다.
+4. pipeline 저장소의 이슈·브랜치·PR 절차로 반영합니다. 승인·머지 후 git-sync가 Airflow에 전달합니다.
+
+생성기 CD는 pipeline 저장소에 접근하지 않으므로 `PIPELINE_REPO_TOKEN`을 사용하지 않습니다. 이미 등록된 GitHub Secret은 이 코드 변경에서 삭제하지 않습니다. 이미지 업로드 완료가 GKE 실행 완료를 뜻하지는 않으며, 실제 작업 실행은 Airflow에서 확인합니다.
 
 릴리스 공개 시 기존 Cloud Run CD와 생성기 이미지 업로드가 각각 실행됩니다. 생성기 이미지 업로드만 원하면 main에서 수동 workflow를 사용합니다. 이 workflow의 산출물은 업로드된 이미지이며, Airflow에서 실제 작업을 실행하려면 Pod 템플릿·Secret·저장소 설정을 준비해야 합니다. 모델 API 실제 호출은 Airflow 검증 단계에서 확인합니다.
 
@@ -115,8 +111,3 @@ OpenRouter 키도 `OPENROUTER_API_KEY_SECRET`에 지정한 Secret Manager 버전
 예를 들어 `<output-root>/2026-11-19/images/news-123.png`를 `gs://final-project-513508-news-thumbnails/images/2026-11-19/images/news-123.png`로 업로드합니다. DB URL은 `https://storage.googleapis.com/final-project-513508-news-thumbnails/images/2026-11-19/images/news-123.png`가 됩니다. 최상위 images와 날짜 아래 images는 기존 경로 규칙을 유지한 것입니다.
 
 PNG와 JSONL은 PVC에 먼저 기록합니다. 업로드 실패 시 DB 적재 전에 종료하며, 같은 실행을 재시도하면 백업에서 기존 기사와 PNG를 재사용합니다. 이미 업로드한 객체가 있으면 해시를 비교해 같은 파일임을 확인합니다. 생성기 실행 계정에는 버킷의 images/ 경로 아래 `storage.objects.create`, `storage.objects.get` 권한이 필요합니다. 버킷 공개 읽기 설정은 인프라에서 관리합니다. 첨부받은 운영 설명을 기준으로 경로를 반영했으며 현재 버킷의 공개 설정과 실제 쓰기 권한은 배포 전에 확인해야 합니다.
-
-자동 PR 생성 도중 push는 성공했지만 PR 생성이 실패한 경우, CD 재실행은 기존 원격
-브랜치를 재사용해 PR 생성을 이어갑니다. 두 이미지 설정 파일이 이번 갱신 결과와
-같은지 비교한 뒤 재사용하며, 다르면 덮어쓰지 않고 중단합니다. 강제 push는 하지 않습니다.
-원격 브랜치 조회 자체가 실패해도 새 브랜치로 간주하지 않고 중단합니다.
