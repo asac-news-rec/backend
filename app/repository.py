@@ -12,7 +12,9 @@ def fetch_news(
     subcategory: str | None = None,
     *,
     after: tuple[datetime, str] | None = None,
+    include_body: bool = False,
 ):
+    body_column = "a.paragraphs," if include_body else ""
     params = [reader_id, category, category, subcategory, subcategory]
     cursor_condition = ""
     if after is not None:
@@ -27,7 +29,7 @@ def fetch_news(
                 a.title,
                 a.subtitle,
                 a.summary,
-                -- a.paragraphs,  -- 본문은 상세 조회에서 제공합니다.
+                {body_column}
                 a.tags,
                 a.category,
                 a.subcategory,
@@ -161,7 +163,7 @@ def fetch_news_detail(
 ):
 
     with conn.cursor() as cur:
-        cur.execute(f"""
+        cur.execute("""
             SELECT
                 a.id AS article_id,
                 a.title,

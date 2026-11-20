@@ -76,13 +76,6 @@ def require_reader_id(
         raise HTTPException(status_code=401, detail="익명 독자 인증이 필요합니다.")
     return reader_id
 
-# article_id, title, paragraphs, is_liked 등
-# fetch_news_detail()이 반환하는 필드로 별도 정의
-class NewsDetailResponse(BaseModel):
-    request_id: str
-    served_at: datetime
-    content: ArticleDetail
-
 class ArticleDetail(BaseModel):
     article_id: str
     title: str
@@ -106,6 +99,12 @@ class ArticleDetail(BaseModel):
     def serialize_published_at(self, value: datetime) -> str:
         # 기존 JSON의 시간대 표기(+00:00 등)를 유지한다.
         return value.isoformat()
+
+
+class NewsDetailResponse(BaseModel):
+    request_id: str
+    served_at: str = Field(json_schema_extra={"format": "date-time"})
+    content: ArticleDetail
 
 
 class FeedCursor(BaseModel):
@@ -154,6 +153,14 @@ class FeedResponse(BaseModel):
     next_cursor: FeedCursor | None
 
 
+class LegacyFeedItem(FeedItem):
+    paragraphs: list[str]
+
+
+class LegacyFeedResponse(FeedResponse):
+    items: list[LegacyFeedItem]
+
+
 class CategoryResponse(BaseModel):
     category_list: list[str]
 
@@ -185,6 +192,7 @@ def health():
             # from exc: “새로 발생시키는 예외의 원인이 원래 오류 exc다”라고 연결하는 문법
         ) from exc
 
+@app.get("/news/{article_id}", response_model=NewsDetailResponse, include_in_schema=False)
 @api_v1.get("/news/{article_id}", response_model=NewsDetailResponse)
 def news_feed_detail(
     article_id: str,
@@ -223,6 +231,18 @@ def news_feed(
     body: FeedRequest,
     reader_id: Annotated[str, Depends(require_reader_id)],
 ):
+    return build_feed_response(body, reader_id, include_body=False)
+
+
+@app.post("/news/feed", response_model=LegacyFeedResponse, include_in_schema=False)
+def legacy_news_feed(
+    body: FeedRequest,
+    reader_id: Annotated[str, Depends(require_reader_id)],
+):
+    return build_feed_response(body, reader_id, include_body=True)
+
+
+def build_feed_response(body: FeedRequest, reader_id: str, *, include_body: bool):
     after = None
     returned_count = 0
     if body.cursor is not None:
@@ -237,6 +257,7 @@ def news_feed(
                 category=body.category,
                 subcategory=body.subcategory,
                 after=after,
+                include_body=include_body,
             )
     except psycopg.Error as exc:
         raise HTTPException(
@@ -299,16 +320,19 @@ def change_like(article_id: str, reader_id: str, desired: bool):
         ) from exc
 
 
+@app.put("/news/{article_id}/like", include_in_schema=False)
 @api_v1.put("/news/{article_id}/like")
 def like(article_id: str, reader_id: Annotated[str, Depends(require_reader_id)]):
     return change_like(article_id, reader_id, True)
 
 
+@app.delete("/news/{article_id}/like", include_in_schema=False)
 @api_v1.delete("/news/{article_id}/like")
 def unlike(article_id: str, reader_id: Annotated[str, Depends(require_reader_id)]):
     return change_like(article_id, reader_id, False)
 
 
+@app.post("/user/anonymous", include_in_schema=False)
 @api_v1.post("/user/anonymous")
 def create_anonymous_user(
     response: Response,
@@ -331,6 +355,7 @@ def create_anonymous_user(
     return {"reader_id": reader_id}
 
 
+@app.post("/category", response_model=CategoryResponse, include_in_schema=False)
 @api_v1.post("/category", response_model=CategoryResponse)
 def call_category():
     try:
@@ -344,6 +369,7 @@ def call_category():
     return {"category_list": [row["category"] for row in rows]}
 
 
+@app.post("/subcategory", response_model=SubcategoryResponse, include_in_schema=False)
 @api_v1.post("/subcategory", response_model=SubcategoryResponse)
 def call_subcategory(body: SubcategoryRequest):
     try:
@@ -358,5 +384,3 @@ def call_subcategory(body: SubcategoryRequest):
 
 
 app.include_router(api_v1, prefix="/v1")
-# 기존 프론트의 경로를 유지하되 OpenAPI 문서에서는 v1만 표시합니다.
-app.include_router(api_v1, include_in_schema=False)

@@ -43,6 +43,7 @@ def test_detail_versions_use_reader_cookie_and_return_article(reader_client, fak
     assert response.status_code == 200
     assert response.json()["content"]["is_liked"] is True
     assert response.json()["content"]["paragraphs"] == ["기사 본문"]
+    assert response.json()["served_at"].endswith("+00:00")
     reader_id = reader_client.post("/user/anonymous").json()["reader_id"]
     assert connection.executed[0][1] == (reader_id, "detail-1")
 
@@ -61,15 +62,19 @@ def test_v1_detail_database_error_returns_503(reader_client, fake_db):
     assert reader_client.get("/v1/news/detail-1").status_code == 503
 
 
-def test_feed_excludes_body_from_response(reader_client, fake_db):
+@pytest.mark.parametrize("prefix, has_body", [("", True), ("/v1", False)])
+def test_feed_preserves_legacy_body_and_excludes_v1_body(reader_client, fake_db, prefix, has_body):
     article = {key: None for key in main.ArticleDetail.model_fields}
     article.update(
         article_id="feed-1", title="목록 기사", paragraphs=["상세 전용 본문"], tags=[],
         category="사회", published_at=datetime(2026, 11, 20, tzinfo=timezone.utc),
         is_synthetic=True, is_liked=False,
     )
-    fake_db.set(results=[[article]])
-    response = reader_client.post("/v1/news/feed", json={})
+    connection = fake_db.set(results=[[article]])
+    response = reader_client.post(prefix + "/news/feed", json={})
     assert response.status_code == 200
-    assert "paragraphs" not in response.json()["items"][0]
+    assert ("paragraphs" in response.json()["items"][0]) is has_body
+    if has_body:
+        assert response.json()["items"][0]["paragraphs"] == ["상세 전용 본문"]
+    assert ("a.paragraphs," in connection.executed[0][0]) is has_body
     assert "paragraphs" not in main.FeedItem.model_fields
