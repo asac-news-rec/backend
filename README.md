@@ -7,8 +7,8 @@ ASAC 뉴스 추천 시스템의 FastAPI 서버입니다. 뉴스 피드와 카테
 | 위치 | 역할 |
 | --- | --- |
 | [`app/`](app/) | FastAPI 라우트, PostgreSQL 연결·쿼리 |
-| [`compose.yaml`](compose.yaml) | 로컬 PostgreSQL 18, FastAPI, Nginx 실행 구성 |
-| [`Dockerfile`](Dockerfile) · [`nginx/`](nginx/) | FastAPI 이미지와 Cloud Run용 Nginx API 프록시 |
+| [`compose.yaml`](compose.yaml) | 로컬 PostgreSQL 18·FastAPI 실행 구성 |
+| [`Dockerfile`](Dockerfile) | FastAPI 이미지 빌드 |
 | [`tests/`](tests/) · [`pytest.ini`](pytest.ini) | API 테스트와 PostgreSQL 조회 통합 테스트 |
 | [`pyproject.toml`](pyproject.toml) · [`uv.lock`](uv.lock) | Python 3.14 의존성과 생성·테스트 그룹, 고정된 패키지 버전 |
 | [`generate/`](generate/) · [`exports/`](exports/) | 기사·썸네일 생성, 기사 적재, DB 백업과 복원 |
@@ -16,14 +16,13 @@ ASAC 뉴스 추천 시스템의 FastAPI 서버입니다. 뉴스 피드와 카테
 
 ## 로컬 실행
 
-### 화면까지 함께 실행
+### PostgreSQL과 FastAPI 실행
 
-Docker와 Docker Compose가 필요합니다. `asac-news-rec/frontend`를 `backend`와 같은 상위 폴더에 두고, 프론트 저장소가 요구하는 Node.js로 빌드합니다. 아래 명령은 `backend` 루트에서 실행합니다.
+Docker와 Docker Compose가 필요합니다. 아래 명령은 `backend` 루트에서 실행합니다. 화면 제공용 Nginx 이미지의 빌드·배포는 프론트 저장소에서 관리합니다.
 
 처음 설정할 때 [`.env.example`](.env.example)을 `.env`로 복사하고 로컬 DB 접속값을 채웁니다. `PGPASSWORD`를 포함한 실제 접속값은 로컬 `.env`에 보관합니다.
 
 ```bash
-(cd ../frontend && npm ci && npm run build)
 docker compose config --quiet
 docker compose up -d --build --wait --wait-timeout 90
 docker compose ps
@@ -31,16 +30,15 @@ docker compose ps
 
 | 접속 대상 | 기본 주소 |
 | --- | --- |
-| 뉴스 화면 | <http://127.0.0.1:8080/> |
-| API 문서 | <http://127.0.0.1:8080/api/docs> |
-| API 상태와 DB 접속 확인 | <http://127.0.0.1:8080/api/health> |
+| API 문서 | <http://127.0.0.1:8000/docs> |
+| API 상태와 DB 접속 확인 | <http://127.0.0.1:8000/health> |
 | 로컬 PostgreSQL | `127.0.0.1:5433` · 기본 DB `newsdb`, 사용자 `recommend` |
 
 `DB_POOL_MAX_SIZE`는 FastAPI 프로세스당 최대 PostgreSQL 연결 수입니다.
 로컬에서는 `.env`에서 조정하며 기본값은 `4`입니다. 풀은 DB 요청이 들어오면
 연결을 만들고 이후 요청에 재사용합니다. 연결을 3초 안에 얻지 못한 요청은 HTTP 503을 받습니다.
 
-Nginx는 `../frontend/dist/`의 HTML·CSS·JS를 제공하고 `/api/` 요청을 FastAPI에 전달합니다. 브라우저에서 쓰는 뉴스 조회 경로는 `POST /api/v1/news/feed`입니다.
+로컬에서는 FastAPI의 8000번 포트에 직접 요청합니다(`POST /v1/news/feed`). Cloud Run의 기존 Nginx를 거치는 외부 경로는 `POST /api/v1/news/feed`입니다. 기존 백엔드 Nginx 파일은 Git에서 제외한 `exports/nginx/`에 로컬 참고용으로 보관합니다.
 
 ### FastAPI를 직접 실행
 
@@ -116,7 +114,7 @@ git diff --check
 
 로컬에서 PostgreSQL 통합 테스트를 실행하려면 테스트용 임시 PostgreSQL의 접속 문자열을 `POSTGRES_TEST_DSN`으로 지정합니다. 지정하지 않으면 PostgreSQL을 사용하는 테스트를 건너뜁니다.
 
-[백엔드 CI](.github/workflows/ci.yml)는 PR과 `main` 푸시에서 테스트 전용 PostgreSQL 18을 시작하고 `pytest`를 실행합니다. PR에서는 Nginx와 FastAPI 이미지도 빌드해 [스모크 테스트](.github/scripts/smoke-containers.sh)를 실행합니다. 검사는 Nginx를 거친 FastAPI의 OpenAPI 응답과 `POST /v1/news/feed` 정의를 확인합니다.
+[백엔드 CI](.github/workflows/ci.yml)는 PR과 `main` 푸시에서 테스트 전용 PostgreSQL 18을 시작하고 `pytest`를 실행합니다. PR에서는 FastAPI 이미지 하나를 빌드해 [스모크 테스트](.github/scripts/smoke-containers.sh)를 실행합니다. 스크립트는 임시 컨테이너의 8000번 포트에서 `/openapi.json`의 HTTP 200과 `POST /v1/news/feed` 정의를 확인한 뒤 컨테이너와 임시 파일을 정리합니다. Nginx·화면 파일·DB 연결은 이 스크립트의 검사 대상이 아닙니다.
 
 ## Cloud Run 배포
 
@@ -124,11 +122,16 @@ git diff --check
 
 1. 릴리스 태그의 커밋이 `main` 푸시에서 CI를 통과했는지 확인합니다. 통과한 백엔드
    커밋을 가져옵니다.
-2. FastAPI와 Nginx API 프록시 이미지를 만든 뒤 두 이미지로 스모크 테스트를 실행합니다.
-3. Google Cloud에 인증하고 이미지를 Artifact Registry에 업로드합니다.
-4. 두 이미지 주소, 실행 계정과 DB 연결이 포함된 서비스 설정을 생성해 `gcloud run services replace`로 적용합니다.
+2. FastAPI 이미지만 빌드하고 임시 컨테이너에서 스모크 테스트를 실행합니다.
+3. Google Cloud에 인증하고 FastAPI 이미지를 Artifact Registry에 업로드합니다.
+4. `gcloud run services update news-feed --container fastapi --image ...`로 해당 컨테이너 이미지 하나만 갱신합니다. 프로젝트·리전 등 서비스 옵션은 `--container` 앞에 지정합니다.
 
-Cloud Run 서비스 이름은 `news-feed`입니다. 이 서비스의 화면 경로 `/`는 HTTP 404를 반환합니다. 한 인스턴스에서 Nginx가 80번 포트로 HTTP 요청을 받고, `/api/` 요청은 같은 인스턴스의 FastAPI `127.0.0.1:8000`으로 전달합니다. FastAPI는 Cloud SQL PostgreSQL에 연결하고, Cloud Run이 Secret Manager에서 읽은 비밀번호를 `PGPASSWORD` 환경변수로 받습니다.
+기존 Cloud Run 서비스 `news-feed`와 이름이 `fastapi`인 컨테이너가 준비되어 있어야 합니다.
+서비스 전체 YAML을 생성하거나 교체하지 않습니다. 기존 Nginx 이미지, 포트, 실행 계정,
+Cloud SQL 연결, 환경변수와 Secret 참조 등 기존 설정은 유지합니다.
+프론트 저장소가 화면 파일을 포함한 `nginx` 이미지를 별도로 갱신합니다.
+같은 인스턴스에서 Nginx는 80번 포트로 받고 `/api/` 요청을 FastAPI의
+`127.0.0.1:8000`으로 전달합니다. 실제 화면·API 통합 확인은 프론트 배포와 함께 수행합니다.
 
 백엔드 저장소의 **Settings → Secrets and variables → Actions**에서 워크플로가 참조하는 값을 설정합니다.
 
@@ -137,21 +140,24 @@ Cloud Run 서비스 이름은 `news-feed`입니다. 이 서비스의 화면 경�
 | Secrets | `GCP_SA_KEY` | GitHub Actions의 GCP 배포용 서비스 계정 JSON 키 |
 | Variables | `GCP_PROJECT`, `RUN_REGION` | Cloud Run 배포 프로젝트와 리전 |
 | Variables | `AR_REGION`, `AR_REPOSITORY` | 이미지 저장소의 리전과 이름 |
-| Variables | `WAS_SERVICE_ACCOUNT` | Cloud Run 실행 계정 이메일 |
-| Variables | `CLOUD_SQL_INSTANCE`, `WAS_DB_NAME`, `WAS_DB_USER` | Cloud SQL 연결 이름, 데이터베이스 이름, PostgreSQL 사용자 |
-| Variables (선택) | `DB_POOL_MAX_SIZE` | FastAPI 프로세스당 최대 DB 연결 수. 기본값 `4` |
-| Variables | `WAS_DB_PASSWORD_SECRET` | DB 비밀번호를 보관하는 Secret Manager 항목 이름 |
 
-Secret Manager의 `news-reader-cookie-secret`에 서명 키를 저장하고 Cloud Run 실행 계정에
-이 Secret의 읽기 권한을 부여합니다. CD는 이 Secret의 버전 `1`을
-`READER_COOKIE_SECRET`으로 FastAPI에 연결합니다.
+실행 계정, Cloud SQL 연결과 `PGHOST`·`PGPORT`·`PGDATABASE`·`PGUSER`·`PGPASSWORD`,
+`DB_POOL_MAX_SIZE`, `READER_COOKIE_SECRET` 설정은 기존 Cloud Run 서비스에 유지합니다.
+DB 비밀번호는 Secret Manager의 `news-db-password`, 독자 쿠키 서명 키는
+`news-reader-cookie-secret` 버전 `1`을 참조하는 기존 설정을 사용합니다.
+이번 CD는 이미지 갱신만 하므로 GitHub Variables의 DB·실행 계정·풀 크기를 바꾸는 것만으로
+Cloud Run 설정이 갱신되지는 않습니다. 해당 설정 변경은 인프라 담당 절차로 적용합니다.
 
 Cloud Run의 DB 연결 수는 인스턴스 수와 프로세스당 풀 상한에 따라 늘어납니다.
 기사 적재와 관리 접속도 포함해 Cloud SQL 연결 한도에 여유가 있도록 풀 상한을 정합니다.
 Cloud Run 실행 계정에는 Cloud SQL 연결과 해당 Secret 읽기 권한이 필요합니다. GCP 리소스 정의는 [infra 저장소](https://github.com/asac-news-rec/infra)에서 관리합니다.
 
-이 변경은 기존 Cloud Run 서비스와 컨테이너 구성을 사용합니다. 문제가 발생하면
-Cloud Run 트래픽을 이전에 검증한 리비전으로 되돌릴 수 있습니다.
+Nginx와 백엔드의 이미지 업로드·배포는 각 저장소에서 수행합니다. 신규 서비스·권한·리소스를
+추가하지 않으며 백엔드의 Nginx 이미지 빌드·업로드 비용을 줄입니다.
+문제 발생 시 이전에 검증한 FastAPI 이미지 주소로 `--container fastapi --image ...`만
+갱신해 롤백합니다. 서비스 전체 리비전으로 되돌리면 프론트 버전도 함께 되돌아갈 수 있으므로,
+전체 리비전 롤백이 필요한 경우 프론트 담당자와 함께 확인합니다.
+배포 전후의 `nginx` 이미지가 같은지, `fastapi`만 새 주소로 바뀌었는지 확인합니다.
 
 ## 릴리스 초안
 

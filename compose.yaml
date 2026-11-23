@@ -68,34 +68,26 @@ services:
   #     LOG_RECEIVER_URL: ${LOG_RECEIVER_URL:-}
   #   volumes:
   #     - news-log-spool:/var/spool/news-logs
-  nginx:
-    image: nginx:stable-alpine
-    restart: unless-stopped
+  # nginx:
+  #   image: nginx:stable-alpine
+  #   restart: unless-stopped
 
-    ports:
-      - "127.0.0.1:8080:80"
-    volumes:
-      # PC 경로 : 컨테이너 경로 : 접근 방식 -> 읽기 전용(read-only)
-      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./generate/local_generate/output_with_thumbnail:/srv/images:ro
-      # 옆의 frontend 저장소에서 npm run build로 생성한 파일을 연결한다.
-      - type: bind
-        source: ../frontend/dist
-        target: /usr/share/nginx/html
-        read_only: true
-        bind:
-          create_host_path: false
-    depends_on:
-      api:
-        condition: service_healthy
-    # nginx:
-    # depends_on:
-    #   api:
-    #     condition: service_healthy
-    #   api 시작
-    #     → api에 정의된 healthcheck 실행
-    #     → 검사 성공으로 healthy 상태가 됨
-    #     → nginx 시작
+  #   ports:
+  #     - "127.0.0.1:8080:80"
+  #   volumes:
+  #     # PC 경로 : 컨테이너 경로 : 접근 방식 -> 읽기 전용(read-only)
+  #     - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+  #     - ./generate/local_generate/output_with_thumbnail:/srv/images:ro
+  #     # 옆의 frontend 저장소에서 npm run build로 생성한 파일을 연결한다.
+  #     - type: bind
+  #       source: ../frontend/dist
+  #       target: /usr/share/nginx/html
+  #       read_only: true
+  #       bind:
+  #         create_host_path: false
+  #   depends_on:
+  #     api:
+  #       condition: service_healthy
 
 volumes:
   # news-log-spool:
