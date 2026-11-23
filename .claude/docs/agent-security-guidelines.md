@@ -1,6 +1,6 @@
 # 에이전트 보안 가이드
 
-> Last Updated: 2026-11-12
+> Last Updated: 2026-11-23
 
 백엔드의 시크릿, 자격 증명, IAM, 워크플로 권한을 다룰 때 참고합니다.
 
@@ -12,15 +12,16 @@
 - 시크릿 값은 코드, 로그, PR 본문, 커밋 메시지, 이슈, 채팅에 포함하지 않습니다.
 - Cloud Run의 FastAPI에는 Secret Manager 참조를 통해 DB 비밀번호를
   `PGPASSWORD`로 주입합니다. 배포 설정에는 Secret 이름과 버전을 적습니다.
-- GitHub Actions Variables에는 프로젝트·리전, 이미지 저장소, 실행 계정 이메일,
-  DB 연결 이름과 같은 배포 설정을 둡니다. 자격 증명은 Actions Secrets에서 참조합니다.
+- 현재 백엔드 CD는 GitHub Actions Variables에서 프로젝트·리전·이미지 저장소를
+  읽습니다. 실행 계정·DB 연결·Secret 참조는 기존 Cloud Run 설정을 유지합니다.
+  배포 자격 증명은 Actions Secrets에서 참조합니다.
 
 ## GitHub Actions 인증 [현재 코드]
 
 | 설정 | 용도 |
 | --- | --- |
 | `GCP_SA_KEY` | CD에서 Google Cloud에 인증하는 배포 계정의 JSON 키. Artifact Registry 업로드와 Cloud Run 배포에 사용합니다. |
-| `WAS_SERVICE_ACCOUNT` | Cloud Run에 배포된 서비스의 실행 계정 이메일. Cloud SQL 연결과 지정된 Secret 읽기 권한이 필요합니다. |
+| 기존 Cloud Run 실행 계정 | Cloud SQL 연결과 지정된 Secret 읽기 권한이 필요합니다. 현재 CD는 `WAS_SERVICE_ACCOUNT` 변수를 읽어 실행 계정을 바꾸지 않습니다. |
 
 [CD 워크플로](../../.github/workflows/cd.yml)는 `GCP_SA_KEY`를
 `credentials_json`에 전달합니다. 향후 인증 방식을 바꿀 때는 OIDC 기반 Workload

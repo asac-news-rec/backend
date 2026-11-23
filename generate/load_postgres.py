@@ -175,118 +175,117 @@ def read_articles(path, *, output_root=None, image_base_url='http://localhost:80
     return rows
 
 
-# 로컬 JSONL 수동 적재용 보관 코드입니다.
-# def parse_load_date(value):
-#     try:
-#         parsed = date.fromisoformat(value)
-#         if parsed.isoformat() != value:
-#             raise ValueError
-#         return parsed
-#     except ValueError:
-#         raise argparse.ArgumentTypeError('날짜는 YYYY-MM-DD 형식이어야 합니다.')
-#
-#
-# def date_input_files(output_root, selected_date):
-#     """이전 run 폴더를 먼저, 새 날짜 폴더는 파일 번호순으로 선택합니다."""
-#     legacy = sorted(output_root.glob(f'run-{selected_date:%Y%m%d}-*/articles.jsonl'))
-#     day = output_root / selected_date.isoformat()
-#     numbered = []
-#     if day.is_dir():
-#         numbered = [p for p in day.glob('articles-*.jsonl')
-#                     if re.fullmatch(r'articles-\d+\.jsonl', p.name)]
-#         numbered.sort(key=lambda p: int(p.stem.split('-')[1]))
-#         if (day / 'articles.jsonl').is_file():
-#             legacy.append(day / 'articles.jsonl')
-#     dated = day / f'articles-{selected_date.isoformat()}.jsonl'
-#     files = legacy + numbered + ([dated] if dated.is_file() else [])
-#     if not files:
-#         raise ValueError(f'{selected_date}: 기사 JSONL이 없습니다: {output_root}')
-#     return files
-#
-#
-# def read_input_files(paths, *, output_root=None, image_base_url='http://localhost:8001'):
-#     # 생성기가 갱신 중인 JSONL을 부분 적재하지 않습니다.
-#     unique = {}
-#     input_rows = 0
-#     for path in paths:
-#         lock_path = path.parent / f'.{path.stem}.lock'
-#         lock = lock_path.open('r') if lock_path.exists() else None
-#         try:
-#             if lock is not None:
-#                 try:
-#                     fcntl.flock(lock, fcntl.LOCK_SH | fcntl.LOCK_NB)
-#                 except BlockingIOError:
-#                     raise ValueError(f'생성 중인 파일입니다. 생성 종료 후 적재하세요: {path}')
-#             if not path.read_text(encoding='utf-8-sig').strip():
-#                 print(f'빈 기사 파일 건너뜀: {path}')
-#                 continue
-#             rows = read_articles(path, output_root=output_root, image_base_url=image_base_url)
-#             input_rows += len(rows)
-#             for row in rows:
-#                 unique[row[0]] = row
-#             print(f'입력: {path} ({len(rows)}행)')
-#         finally:
-#             if lock is not None:
-#                 lock.close()
-#     if not unique:
-#         raise ValueError('적재할 기사가 없습니다.')
-#     return list(unique.values()), input_rows
-#
-#
-# def load_project_env():
-#     # 실행 위치와 무관하게 backend/.env를 읽고 기존 환경변수는 유지합니다.
-#     load_dotenv(dotenv_path=ROOT.parent / '.env', override=False)
-#
-#
+# JSONL 수동 검증·재적재용 함수입니다.
+def parse_load_date(value):
+    try:
+        parsed = date.fromisoformat(value)
+        if parsed.isoformat() != value:
+            raise ValueError
+        return parsed
+    except ValueError:
+        raise argparse.ArgumentTypeError('날짜는 YYYY-MM-DD 형식이어야 합니다.')
+
+
+def date_input_files(output_root, selected_date):
+    """이전 run 폴더를 먼저, 새 날짜 폴더는 파일 번호순으로 선택합니다."""
+    legacy = sorted(output_root.glob(f'run-{selected_date:%Y%m%d}-*/articles.jsonl'))
+    day = output_root / selected_date.isoformat()
+    numbered = []
+    if day.is_dir():
+        numbered = [p for p in day.glob('articles-*.jsonl')
+                    if re.fullmatch(r'articles-\d+\.jsonl', p.name)]
+        numbered.sort(key=lambda p: int(p.stem.split('-')[1]))
+        if (day / 'articles.jsonl').is_file():
+            legacy.append(day / 'articles.jsonl')
+    dated = day / f'articles-{selected_date.isoformat()}.jsonl'
+    files = legacy + numbered + ([dated] if dated.is_file() else [])
+    if not files:
+        raise ValueError(f'{selected_date}: 기사 JSONL이 없습니다: {output_root}')
+    return files
+
+
+def read_input_files(paths, *, output_root=None, image_base_url='http://localhost:8001'):
+    # 생성기가 갱신 중인 JSONL을 부분 적재하지 않습니다.
+    unique = {}
+    input_rows = 0
+    for path in paths:
+        lock_path = path.parent / f'.{path.stem}.lock'
+        lock = lock_path.open('r') if lock_path.exists() else None
+        try:
+            if lock is not None:
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_SH | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    raise ValueError(f'생성 중인 파일입니다. 생성 종료 후 적재하세요: {path}')
+            if not path.read_text(encoding='utf-8-sig').strip():
+                print(f'빈 기사 파일 건너뜀: {path}')
+                continue
+            rows = read_articles(path, output_root=output_root, image_base_url=image_base_url)
+            input_rows += len(rows)
+            for row in rows:
+                unique[row[0]] = row
+            print(f'입력: {path} ({len(rows)}행)')
+        finally:
+            if lock is not None:
+                lock.close()
+    if not unique:
+        raise ValueError('적재할 기사가 없습니다.')
+    return list(unique.values()), input_rows
+
+
+def load_project_env():
+    # 실행 위치와 무관하게 backend/.env를 읽고 기존 환경변수는 유지합니다.
+    load_dotenv(dotenv_path=ROOT.parent / '.env', override=False)
+
+
 def upsert_articles(cursor, rows):
     cursor.executemany(UPSERT, rows)
 
 
-# 수동 적재 진입점도 위 보관 함수들과 함께 비활성화합니다.
-# def main():
-#     load_project_env()
-#     parser = argparse.ArgumentParser(description=__doc__)
-#     inputs = parser.add_mutually_exclusive_group(required=True)
-#     inputs.add_argument("--input", type=Path, help="적재할 JSONL 파일 하나")
-#     inputs.add_argument("--date", type=parse_load_date, help="해당 날짜의 기사 JSONL 전체 적재: YYYY-MM-DD")
-#     parser.add_argument("--output-root", type=Path, default=ROOT / 'output_with_thumbnail',
-#                         help="날짜 폴더를 찾을 생성 결과 루트")
-#     parser.add_argument("--image-base-url", default=os.getenv('IMAGE_BASE_URL', 'http://localhost:8001'),
-#                         help="이미지 공개 루트 URL. IMAGE_BASE_URL 또는 기본 http://localhost:8001")
-#     parser.add_argument("--host", default=os.getenv("PGHOST", "localhost"))
-#     parser.add_argument("--port", type=int, default=int(os.getenv("PGPORT", "5433")))
-#     parser.add_argument("--dbname", default=os.getenv("PGDATABASE", "newsdb"))
-#     parser.add_argument("--user", default=os.getenv("PGUSER", "recommend"))
-#     parser.add_argument("--validate-only", action="store_true", help="DB 연결 없이 파일 검증")
-#     args = parser.parse_args()
-#     try:
-#         image_base_url = validate_image_base_url(args.image_base_url)
-#         output_root = args.output_root.expanduser().resolve()
-#         paths = ([args.input.expanduser().resolve()] if args.input else
-#                  date_input_files(output_root, args.date))
-#         rows, input_rows = read_input_files(paths, output_root=output_root, image_base_url=image_base_url)
-#     except (OSError, ValueError) as exc:
-#         parser.error(str(exc))
-#     if args.validate_only:
-#         for row in rows[:3]:
-#             print(f"이미지 URL: {row[0]} → {row[COLUMNS.index('image_url')]}")
-#         print(f"검증 완료: 파일 {len(paths)}개 / 원본 {input_rows}행 / 고유 기사 {len(rows)}건")
-#         return
-#
-#     # 비밀번호는 프로젝트 .env·기존 환경변수의 PGPASSWORD 또는 ~/.pgpass로 전달합니다.
-#     # 전체 적재는 한 트랜잭션으로 처리하며 실패 시 모두 롤백합니다.
-#     with psycopg.connect(
-#         host=args.host, port=args.port, dbname=args.dbname,
-#         user=args.user, connect_timeout=10,
-#     ) as connection:
-#         with connection.cursor() as cursor:
-#             ensure_schema(cursor)
-#             upsert_articles(cursor, rows)
-#             cursor.execute("SELECT count(*) FROM public.news_articles")
-#             total = cursor.fetchone()[0]
-#     print(f"적재 완료: 파일 {len(paths)}개 / 원본 {input_rows}행 / 고유 기사 {len(rows)}건 / 테이블 전체 {total}건")
-#     print("저장 테이블: public.news_articles")
-#
-#
-# if __name__ == "__main__":
-#     main()
+def main():
+    load_project_env()
+    parser = argparse.ArgumentParser(description=__doc__)
+    inputs = parser.add_mutually_exclusive_group(required=True)
+    inputs.add_argument("--input", type=Path, help="적재할 JSONL 파일 하나")
+    inputs.add_argument("--date", type=parse_load_date, help="해당 날짜의 기사 JSONL 전체 적재: YYYY-MM-DD")
+    parser.add_argument("--output-root", type=Path, default=ROOT / 'output_with_thumbnail',
+                        help="날짜 폴더를 찾을 생성 결과 루트")
+    parser.add_argument("--image-base-url", default=os.getenv('IMAGE_BASE_URL', 'http://localhost:8001'),
+                        help="이미지 공개 루트 URL. IMAGE_BASE_URL 또는 기본 http://localhost:8001")
+    parser.add_argument("--host", default=os.getenv("PGHOST", "localhost"))
+    parser.add_argument("--port", type=int, default=int(os.getenv("PGPORT", "5433")))
+    parser.add_argument("--dbname", default=os.getenv("PGDATABASE", "newsdb"))
+    parser.add_argument("--user", default=os.getenv("PGUSER", "recommend"))
+    parser.add_argument("--validate-only", action="store_true", help="DB 연결 없이 파일 검증")
+    args = parser.parse_args()
+    try:
+        image_base_url = validate_image_base_url(args.image_base_url)
+        output_root = args.output_root.expanduser().resolve()
+        paths = ([args.input.expanduser().resolve()] if args.input else
+                 date_input_files(output_root, args.date))
+        rows, input_rows = read_input_files(paths, output_root=output_root, image_base_url=image_base_url)
+    except (OSError, ValueError) as exc:
+        parser.error(str(exc))
+    if args.validate_only:
+        for row in rows[:3]:
+            print(f"이미지 URL: {row[0]} → {row[COLUMNS.index('image_url')]}")
+        print(f"검증 완료: 파일 {len(paths)}개 / 원본 {input_rows}행 / 고유 기사 {len(rows)}건")
+        return
+
+    # 비밀번호는 프로젝트 .env·기존 환경변수의 PGPASSWORD 또는 ~/.pgpass로 전달합니다.
+    # 전체 적재는 한 트랜잭션으로 처리하며 실패 시 모두 롤백합니다.
+    with psycopg.connect(
+        host=args.host, port=args.port, dbname=args.dbname,
+        user=args.user, connect_timeout=10,
+    ) as connection:
+        with connection.cursor() as cursor:
+            ensure_schema(cursor)
+            upsert_articles(cursor, rows)
+            cursor.execute("SELECT count(*) FROM public.news_articles")
+            total = cursor.fetchone()[0]
+    print(f"적재 완료: 파일 {len(paths)}개 / 원본 {input_rows}행 / 고유 기사 {len(rows)}건 / 테이블 전체 {total}건")
+    print("저장 테이블: public.news_articles")
+
+
+if __name__ == "__main__":
+    main()

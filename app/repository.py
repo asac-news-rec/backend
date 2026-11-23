@@ -12,9 +12,7 @@ def fetch_news(
     subcategory: str | None = None,
     *,
     after: tuple[datetime, str] | None = None,
-    include_body: bool = False,
 ):
-    body_column = "a.paragraphs," if include_body else ""
     params = [reader_id, category, category, subcategory, subcategory]
     cursor_condition = ""
     if after is not None:
@@ -29,7 +27,6 @@ def fetch_news(
                 a.title,
                 a.subtitle,
                 a.summary,
-                {body_column}
                 a.tags,
                 a.category,
                 a.subcategory,
@@ -190,3 +187,38 @@ def fetch_news_detail(
         """, (reader_id,article_id))
         row = cur.fetchone()
     return row
+
+def save_news_impressions(
+    conn,
+    reader_id :str,
+    response:dict
+):
+    rows = [
+        (item['impression_id'],
+         response['request_id'],
+         reader_id,
+         item['article_id'],
+         item['position'],
+         response['served_at'],
+         None,
+         None,
+         None
+         )
+         for item in response['items']
+    ]
+
+    with conn.cursor() as cur:
+        cur.executemany("""
+            INSERT INTO public.news_impressions(
+                impression_id,
+                request_id,
+                reader_id,
+                article_id,
+                position,
+                served_at,
+                score,
+                model_version,
+                features_as_of
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,rows)

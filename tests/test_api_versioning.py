@@ -21,13 +21,22 @@ def test_openapi_lists_versioned_business_routes_only(client):
         assert path not in paths
 
 
-@pytest.mark.parametrize("path", ["/news/feed", "/v1/news/feed"])
-def test_feed_versions_accept_same_cookie(client, fake_db, path):
+def test_v1_feed_accepts_reader_cookie(client, fake_db):
     assert client.post("/v1/user/anonymous").status_code == 200
     fake_db.set(results=[[]])
-    response = client.post(path, json={})
+    response = client.post("/v1/news/feed", json={})
     assert response.status_code == 200
     assert response.json()["items"] == []
+
+
+def test_unversioned_feed_rejects_post(client, fake_db):
+    connection = fake_db.set()
+
+    response = client.post("/news/feed", json={})
+
+    # GET /news/{article_id}는 별도 호환 경로로 남아 있으므로 POST는 405입니다.
+    assert response.status_code == 405
+    assert connection.executed == []
 
 
 @pytest.mark.parametrize("prefix", ["", "/v1"])
@@ -62,8 +71,7 @@ def test_v1_detail_database_error_returns_503(reader_client, fake_db):
     assert reader_client.get("/v1/news/detail-1").status_code == 503
 
 
-@pytest.mark.parametrize("prefix, has_body", [("", True), ("/v1", False)])
-def test_feed_preserves_legacy_body_and_excludes_v1_body(reader_client, fake_db, prefix, has_body):
+def test_v1_feed_excludes_body(reader_client, fake_db):
     article = {key: None for key in main.ArticleDetail.model_fields}
     article.update(
         article_id="feed-1", title="목록 기사", paragraphs=["상세 전용 본문"], tags=[],
@@ -71,10 +79,8 @@ def test_feed_preserves_legacy_body_and_excludes_v1_body(reader_client, fake_db,
         is_synthetic=True, is_liked=False,
     )
     connection = fake_db.set(results=[[article]])
-    response = reader_client.post(prefix + "/news/feed", json={})
+    response = reader_client.post("/v1/news/feed", json={})
     assert response.status_code == 200
-    assert ("paragraphs" in response.json()["items"][0]) is has_body
-    if has_body:
-        assert response.json()["items"][0]["paragraphs"] == ["상세 전용 본문"]
-    assert ("a.paragraphs," in connection.executed[0][0]) is has_body
+    assert "paragraphs" not in response.json()["items"][0]
+    assert "a.paragraphs," not in connection.executed[0][0]
     assert "paragraphs" not in main.FeedItem.model_fields

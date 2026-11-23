@@ -34,6 +34,9 @@ __pycache__/
 output/
 catboost_info/
 
+# API 명세 검토 과정의 중간 산출물
+*.inspect.ndjson
+
 # DB 백업은 로컬에만 보관하고 복원 안내만 공유합니다.
 /exports/*
 !/exports/README.md

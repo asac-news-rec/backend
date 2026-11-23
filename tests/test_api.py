@@ -1,12 +1,14 @@
 """FastAPI 엔드포인트 테스트."""
 
-# import json  # 반환 로그 API 테스트에서 사용
 from datetime import datetime, timedelta, timezone
+from unittest.mock import Mock
 from uuid import UUID
 
 import psycopg
 import pytest
 from itsdangerous import TimestampSigner
+
+from tests.helpers import insert_articles
 
 
 # ---------- /health ----------
@@ -24,19 +26,19 @@ def test_health_returns_503_when_db_down(client, fake_db):
     assert res.status_code == 503
 
 
-# ---------- /news/feed ----------
+# ---------- /v1/news/feed ----------
 
 @pytest.fixture
-def feed_page_articles(insert_articles):
+def feed_page_articles(postgres_connection):
     newest = datetime(2026, 11, 10, tzinfo=timezone.utc)
-    insert_articles([
+    insert_articles(postgres_connection, [
         (f"a{i}", f"제목 {i}", "경제", "증권", newest - timedelta(minutes=i - 1))
         for i in range(1, 26)
     ])
 
 
 def test_feed_first_page_has_next_cursor(postgres_client, feed_page_articles):
-    res = postgres_client.post("/news/feed", json={})
+    res = postgres_client.post("/v1/news/feed", json={})
 
     assert res.status_code == 200
     body = res.json()
@@ -55,16 +57,16 @@ def test_feed_first_page_has_next_cursor(postgres_client, feed_page_articles):
 
 
 def test_feed_continues_after_newer_article_is_inserted(
-    postgres_client, feed_page_articles, insert_articles,
+    postgres_client, feed_page_articles, postgres_connection,
 ):
-    first = postgres_client.post("/news/feed", json={})
+    first = postgres_client.post("/v1/news/feed", json={})
     assert first.status_code == 200
     cursor = first.json()["next_cursor"]
 
-    insert_articles([
+    insert_articles(postgres_connection, [
         ("new", "새 최신 기사", "경제", "증권", datetime(2026, 11, 11, tzinfo=timezone.utc)),
     ])
-    res = postgres_client.post("/news/feed", json={"cursor": cursor})
+    res = postgres_client.post("/v1/news/feed", json={"cursor": cursor})
 
     assert res.status_code == 200
     body = res.json()
@@ -77,7 +79,7 @@ def test_feed_continues_after_newer_article_is_inserted(
 
 def test_feed_filters_articles(postgres_client, feed_filter_articles):
     res = postgres_client.post(
-        "/news/feed",
+        "/v1/news/feed",
         json={"category": "경제", "subcategory": "증권"},
     )
 
@@ -87,40 +89,56 @@ def test_feed_filters_articles(postgres_client, feed_filter_articles):
     assert body["next_cursor"] is None
 
 
-# 반환 로그를 다시 연결할 때 이 API 테스트를 복원합니다.
-# def make_articles(n, start=1):
-#     return [
-#         {"article_id": f"a{i}", "title": f"제목 {i}", "is_liked": False}
-#         for i in range(start, start + n)
-#     ]
+def test_feed_saves_returned_impressions(
+    postgres_client, postgres_connection, feed_page_articles,
+):
+    reader = postgres_client.post("/v1/user/anonymous")
+    assert reader.status_code == 200
+    reader_id = reader.json()["reader_id"]
 
-# def test_feed_writes_log_files(client, fake_db, log_dir):
-#     fake_db.set(results=[make_articles(2)])
-#     body = client.post("/news/feed", json={"reader_id": "r1"}).json()
+    response = postgres_client.post("/v1/news/feed", json={})
+    assert response.status_code == 200
+    body = response.json()
 
-#     request_id = body["request_id"]
-#     lines = (log_dir / f"feed-{request_id}.jsonl").read_text(encoding="utf-8").splitlines()
-#     records = [json.loads(line) for line in lines]
-#     assert [r["article_id"] for r in records] == ["a1", "a2"]
-#     assert all(r["reader_id"] == "r1" for r in records)
+    with postgres_connection.cursor() as cur:
+        cur.execute(
+            """
+            SELECT impression_id, request_id, reader_id, article_id, position, served_at
+            FROM public.news_impressions
+            WHERE request_id = %s
+            ORDER BY position
+            """,
+            (body["request_id"],),
+        )
+        rows = cur.fetchall()
 
-#     meta = json.loads((log_dir / f"feed-{request_id}.meta.json").read_text())
-#     assert meta == {"request_id": request_id, "expected_item_count": 2}
+    assert len(rows) == len(body["items"]) == 20
+    for row, item in zip(rows, body["items"], strict=True):
+        assert str(row["impression_id"]) == item["impression_id"]
+        assert str(row["request_id"]) == body["request_id"]
+        assert row["reader_id"] == reader_id
+        assert row["article_id"] == item["article_id"]
+        assert row["position"] == item["position"]
+        assert row["served_at"] == datetime.fromisoformat(body["served_at"])
 
 
-# def test_feed_still_responds_when_log_write_fails(client, fake_db, monkeypatch):
-#     def broken(*args, **kwargs):
-#         raise OSError("disk full")
+def test_feed_returns_503_when_impression_save_fails(
+    postgres_client, feed_page_articles, monkeypatch,
+):
+    monkeypatch.setattr(
+        "app.main.save_news_impressions",
+        Mock(side_effect=psycopg.OperationalError("테스트용 로그 저장 실패")),
+    )
 
-#     monkeypatch.setattr("app.main.write_feed_log", broken)
-#     fake_db.set(results=[make_articles(1)])
-#     res = client.post("/news/feed", json={"reader_id": "r1"})
-#     assert res.status_code == 200
+    response = postgres_client.post("/v1/news/feed", json={})
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "뉴스 전송내역 저장에 실패하였습니다."}
 
 
 def test_feed_returns_503_on_db_error(reader_client, fake_db):
     fake_db.set(error=psycopg.OperationalError("boom"))
-    res = reader_client.post("/news/feed", json={})
+    res = reader_client.post("/v1/news/feed", json={})
     assert res.status_code == 503
 
 
@@ -131,9 +149,9 @@ def test_feed_rejects_invalid_body(reader_client):
         {**cursor, "article_id": ""},
         {**cursor, "returned_count": -1},
     ):
-        res = reader_client.post("/news/feed", json={"cursor": invalid})
+        res = reader_client.post("/v1/news/feed", json={"cursor": invalid})
         assert res.status_code == 422
-    assert reader_client.post("/news/feed").status_code == 422
+    assert reader_client.post("/v1/news/feed").status_code == 422
 
 
 # ---------- 좋아요 ----------
@@ -188,7 +206,7 @@ def test_create_anonymous_user_returns_uuid7_and_reuses_cookie(client):
 
 
 def test_feed_rejects_missing_or_tampered_reader_cookie(client):
-    assert client.post("/news/feed", json={}).status_code == 401
+    assert client.post("/v1/news/feed", json={}).status_code == 401
 
     issued = client.post("/user/anonymous")
     payload, signature = issued.cookies["news_reader"].rsplit(".", 1)
@@ -197,7 +215,7 @@ def test_feed_rejects_missing_or_tampered_reader_cookie(client):
     client.cookies.clear()
 
     response = client.post(
-        "/news/feed", json={}, headers={"Cookie": f"news_reader={tampered}"}
+        "/v1/news/feed", json={}, headers={"Cookie": f"news_reader={tampered}"}
     )
     assert response.status_code == 401
 
@@ -207,7 +225,7 @@ def test_feed_rejects_expired_reader_cookie(client, monkeypatch):
         expired_time.setattr(TimestampSigner, "get_timestamp", lambda self: 0)
         assert client.post("/user/anonymous").status_code == 200
 
-    assert client.post("/news/feed", json={}).status_code == 401
+    assert client.post("/v1/news/feed", json={}).status_code == 401
 
 
 def test_like_uses_reader_id_from_cookie(reader_client, fake_db):
@@ -255,9 +273,9 @@ def test_category_lookup_returns_503_on_db_error(client, fake_db, path, body):
     assert response.status_code == 503
 
 
-def test_subcategory_list_is_sorted_and_distinct(postgres_client, insert_articles):
+def test_subcategory_list_is_sorted_and_distinct(postgres_client, postgres_connection):
     published_at = "2026-11-10T09:00:00Z"
-    insert_articles([
+    insert_articles(postgres_connection, [
         ("subcategory-z", "Z 기사", "경제", "Zeta", published_at),
         ("subcategory-a", "A 기사", "경제", "Alpha", published_at),
         ("subcategory-a2", "다른 A 기사", "경제", "Alpha", published_at),

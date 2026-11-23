@@ -1,6 +1,6 @@
 # AI 코딩 에이전트 작업 지침
 
-> Version: 0.1.0 | Last Updated: 2026-11-12
+> Version: 0.1.1 | Last Updated: 2026-11-23
 
 이 문서는 Claude Code 등 AI 코딩 에이전트가 이 저장소에서 작업할 때의 기본
 진입점입니다. 필수 규칙은 짧게 유지하고, 상세 가이드는 `.claude/docs/`를
@@ -55,7 +55,7 @@
   데이터 흐름과 ML 워크플로를 설명할 수 있는 것**이 중요합니다.
 - **이 저장소(`asac-news-rec/backend`)**는 FastAPI 뉴스 API, PostgreSQL 데이터 접근,
   기사·썸네일 생성과 적재, 백엔드 CI/CD를 관리합니다.
-- **[현재]** `app/`, `nginx/`, `tests/`, `generate/`, `exports/`, 루트
+- **[현재]** `app/`, `tests/`, `generate/`, `exports/`, 루트
   `compose.yaml`이 있습니다. 이슈·PR 양식과 브랜치 이름 검사
   (`branch-name-policy.yml`), 백엔드 검사(`ci.yml`), Cloud Run 배포
   (`cd.yml`)가 정의되어 있습니다.
@@ -71,7 +71,9 @@
 
 - 백엔드는 뉴스 피드·카테고리 조회, 익명 독자 ID 발급, 좋아요, 기사 생성·적재와
   백엔드 배포 워크플로를 담당합니다. 화면 소스는 `frontend`, Cloud SQL·IAM 등
-  클라우드 리소스 정의는 `infra`에서 관리합니다.
+  클라우드 리소스 정의는 `infra`에서 관리합니다. 화면 제공과 API 프록시를 맡는
+  Nginx 이미지는 `frontend`에서 관리하며, 백엔드 CD는 기존 Cloud Run 서비스의
+  `fastapi` 컨테이너 이미지만 갱신합니다.
 
 ## 핵심 규칙
 
@@ -106,9 +108,10 @@
 
 ## 로컬 개발
 
-**[현재]** 백엔드 루트의 `compose.yaml`로 PostgreSQL 18, FastAPI, Nginx를
-실행합니다. 화면을 함께 확인할 때는 옆 `frontend` 저장소에서 빌드한 `dist/`가
-필요합니다. 상세 실행 방법은 [README.md](README.md)를 참고합니다.
+**[현재]** 백엔드 루트의 `compose.yaml`로 PostgreSQL 18과 FastAPI를
+실행합니다. 기존 Nginx 서비스는 주석 처리되어 있으며, 삭제된 설정 파일을
+참조하므로 주석 해제만으로 복원할 수 없습니다. 로컬 화면·썸네일 연동과
+운영 Cloud Run의 차이는 [README.md](README.md)의 로컬 실행 절을 참고합니다.
 
 백엔드 루트에서 Compose 구성을 확인합니다.
 
@@ -117,8 +120,10 @@ docker compose config --quiet
 ```
 
 - 로컬 DB 접속값은 백엔드 루트의 `.env`에 두고, 예시는 루트의 `.env.example`에 둡니다.
-- 배포 설정은 GitHub Actions Variables와 Secrets에서 읽습니다. Cloud Run은
-  Secret Manager에서 DB 비밀번호를 읽어 FastAPI에 `PGPASSWORD`로 전달합니다.
+- CD는 GitHub Actions Variables에서 프로젝트·리전·이미지 저장소를, Secrets에서
+  배포 인증 정보를 읽습니다. 실행 계정·DB 연결·환경변수·Secret 참조는 기존
+  Cloud Run 설정을 유지합니다. DB 비밀번호는 Cloud Run이 Secret Manager에서
+  읽어 FastAPI에 `PGPASSWORD`로 전달합니다.
 
 ## 계획 먼저
 
