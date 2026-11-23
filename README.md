@@ -103,19 +103,10 @@ uv sync --locked --group generation --no-install-project
 
 기사·좋아요 테이블 외에 `public.news_impressions` 테이블도 필요합니다.
 기사 적재기의 `ensure_schema()`는 이 로그 테이블을 만들지 않습니다.
-로컬에서는 PostgreSQL을 시작한 뒤 백엔드 루트에서 아래 명령으로 준비합니다.
-
-```bash
-docker compose exec -T postgres sh -c \
-  'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1' \
-  < sql/create_news_impressions.sql
-```
-
-[생성 SQL](sql/create_news_impressions.sql)은 새 DB나 계정을 만들지 않고 로그
-테이블과 조회 인덱스를 추가합니다. 동명 테이블이 이미 있다면 컬럼·제약조건을
-대조합니다. `IF NOT EXISTS`는 기존 테이블의 정의를 수정하지 않습니다.
-운영 Cloud SQL은 코드 배포 전에 인프라 담당자가 같은 SQL을 적용하고, 현재
-FastAPI의 PostgreSQL 접속 사용자에 해당 테이블의 `INSERT` 권한을 부여합니다.
+운영 Cloud SQL은 코드 배포 전에 인프라 담당자에게 로그 테이블 생성과 현재
+FastAPI의 PostgreSQL 접속 사용자의 `INSERT` 권한 부여를 요청합니다.
+로컬 DB에도 동일한 구조의 로그 테이블이 필요하며, 테스트 DB는
+`tests/conftest.py`에서 테스트용 테이블을 준비합니다.
 현재 CI/CD는 운영 테이블 생성과 권한 부여를 자동 실행하지 않습니다.
 
 `POST /v1/news/feed`는 반환 기사마다 같은 응답의 ID·순서·시각을 사용해
