@@ -70,7 +70,7 @@ def test_pool_reuses_postgres_connection(pooled_client):
 
 
 @pytest.mark.parametrize("path, body", [
-    ("/news/feed", {}),
+    ("/v1/news/feed", {}),
     ("/category", None),
 ])
 def test_pool_exhaustion_returns_503(pooled_client, path, body):

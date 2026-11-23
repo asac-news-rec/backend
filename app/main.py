@@ -5,7 +5,7 @@ import os
 from typing import Annotated
 from uuid import uuid7
 from pydantic import AwareDatetime, BaseModel, Field, field_serializer
-from .repository import ArticleNotFound, fetch_news, set_like, fetch_big_category, fetch_sub_category, fetch_news_detail
+from .repository import ArticleNotFound, fetch_news, set_like, fetch_big_category, fetch_sub_category, fetch_news_detail,save_news_impressions
 
 import psycopg
 from fastapi import APIRouter, Cookie, Depends, FastAPI, HTTPException, Request, Response
@@ -153,14 +153,6 @@ class FeedResponse(BaseModel):
     next_cursor: FeedCursor | None
 
 
-class LegacyFeedItem(FeedItem):
-    paragraphs: list[str]
-
-
-class LegacyFeedResponse(FeedResponse):
-    items: list[LegacyFeedItem]
-
-
 class CategoryResponse(BaseModel):
     category_list: list[str]
 
@@ -231,18 +223,10 @@ def news_feed(
     body: FeedRequest,
     reader_id: Annotated[str, Depends(require_reader_id)],
 ):
-    return build_feed_response(body, reader_id, include_body=False)
+    return build_feed_response(body, reader_id)
 
 
-@app.post("/news/feed", response_model=LegacyFeedResponse, include_in_schema=False)
-def legacy_news_feed(
-    body: FeedRequest,
-    reader_id: Annotated[str, Depends(require_reader_id)],
-):
-    return build_feed_response(body, reader_id, include_body=True)
-
-
-def build_feed_response(body: FeedRequest, reader_id: str, *, include_body: bool):
+def build_feed_response(body: FeedRequest, reader_id: str):
     after = None
     returned_count = 0
     if body.cursor is not None:
@@ -257,7 +241,6 @@ def build_feed_response(body: FeedRequest, reader_id: str, *, include_body: bool
                 category=body.category,
                 subcategory=body.subcategory,
                 after=after,
-                include_body=include_body,
             )
     except psycopg.Error as exc:
         raise HTTPException(
@@ -285,11 +268,18 @@ def build_feed_response(body: FeedRequest, reader_id: str, *, include_body: bool
         "items": items,
         "next_cursor": next_cursor,
     }
-    # 반환 로그 파일 기록은 후속 배포에서 연결합니다.
-    # try:
-    #     write_feed_log(reader_id, response)
-    # except OSError:
-    #     logger.exception("뉴스 반환 로그 저장 실패: request_id=%s", response["request_id"])
+    try:
+        with connect() as conn:
+            save_news_impressions(
+                conn,
+                reader_id,
+                response
+            )
+    except psycopg.Error as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="뉴스 전송내역 저장에 실패하였습니다.",
+        ) from exc
     return response
 
 

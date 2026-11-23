@@ -12,6 +12,7 @@ from psycopg.rows import dict_row
 
 from app import main
 from generate.load_postgres import ensure_schema
+from tests.helpers import insert_articles
 
 
 class FakeCursor:
@@ -40,6 +41,15 @@ class FakeCursor:
         if isinstance(self._last, list):
             return self._last[0] if self._last else None
         return self._last
+
+    def executemany(self, sql, params_seq):
+        for params in params_seq:
+            self.conn.executed.append(
+                (" ".join(sql.split()), params)
+            )
+
+            if self.conn.error is not None:
+                raise self.conn.error
 
 
 class FakeConnection:
@@ -122,30 +132,28 @@ def postgres_connection(postgres_test_dsn):
         with connection.transaction(force_rollback=True):
             with connection.cursor() as cursor:
                 ensure_schema(cursor)
+                # 테스트 DB에 로그 테이블 준비
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS public.news_impressions (
+                        impression_id UUID PRIMARY KEY,
+                        request_id UUID NOT NULL,
+                        reader_id TEXT NOT NULL,
+                        article_id TEXT NOT NULL,
+                        position INTEGER NOT NULL CHECK (position > 0),
+                        served_at TIMESTAMPTZ NOT NULL,
+                        score DOUBLE PRECISION,
+                        model_version TEXT,
+                        features_as_of TIMESTAMPTZ
+                    )
+                    """
+                )
             yield connection
 
 
 @pytest.fixture
-def insert_articles(postgres_connection):
-    def insert(rows):
-        with postgres_connection.cursor() as cursor:
-            cursor.executemany(
-                """
-                INSERT INTO public.news_articles (
-                    id, title, category, subcategory, published_at,
-                    paragraphs, tags, is_synthetic, raw_article, source_file
-                )
-                VALUES (%s, %s, %s, %s, %s, '[]', '[]', TRUE, '{}', 'test')
-                """,
-                rows,
-            )
-
-    return insert
-
-
-@pytest.fixture
-def feed_filter_articles(insert_articles):
-    insert_articles([
+def feed_filter_articles(postgres_connection):
+    insert_articles(postgres_connection, [
         ("stock-old", "이전 증권 기사", "경제", "증권", "2026-11-09T01:00:00Z"),
         ("stock-new", "최신 증권 기사", "경제", "증권", "2026-11-10T01:00:00Z"),
         ("estate", "부동산 기사", "경제", "부동산", "2026-11-11T01:00:00Z"),

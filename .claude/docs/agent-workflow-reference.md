@@ -1,6 +1,6 @@
 # 에이전트 워크플로 참조
 
-> Last Updated: 2026-11-12
+> Last Updated: 2026-11-23
 
 백엔드의 이슈, 브랜치, 커밋, PR과 배포 흐름을 설명합니다.
 협업 규칙은 [CONTRIBUTING.md](../../CONTRIBUTING.md), 실행·검증 명령은
@@ -105,13 +105,16 @@ GitHub의 `main` 보호 규칙과 필수 체크가 실제로 켜져 있는지는
 | 워크플로 | 실행 조건과 검사 범위 |
 | --- | --- |
 | [branch-name-policy.yml](../../.github/workflows/branch-name-policy.yml) | PR 브랜치 이름 형식 검사 |
-| [ci.yml](../../.github/workflows/ci.yml) | PR 및 `main` 푸시에서 `pytest` 실행. PR에서는 FastAPI·Nginx 이미지 스모크 테스트도 실행 |
+| [ci.yml](../../.github/workflows/ci.yml) | PR 및 `main` 푸시에서 `pytest` 실행. PR에서는 FastAPI 이미지 단독 스모크 테스트도 실행 |
 | [release-drafter.yml](../../.github/workflows/release-drafter.yml) | `main` 푸시에서 릴리스 초안 갱신 |
-| [cd.yml](../../.github/workflows/cd.yml) | 릴리스 공개 후 태그 커밋의 `main` 푸시 CI 성공을 확인하고 Artifact Registry와 Cloud Run에 반영 |
+| [cd.yml](../../.github/workflows/cd.yml) | 릴리스 공개 후 태그 커밋의 `main` 푸시 CI 성공을 확인하고 FastAPI 이미지만 업로드·갱신 |
 
-스모크 테스트는 Nginx를 경유한 FastAPI의 OpenAPI 응답과 `POST /news/feed` 정의을 확인합니다.
-배포용 이미지 두 개는 검사 통과 후 업로드합니다. 백엔드 이미지는 공개한 릴리스
-태그의 커밋으로 빌드합니다.
+스모크 테스트는 FastAPI의 8000번 포트에서 `/openapi.json`의 HTTP 200과
+`POST /v1/news/feed` 정의를 직접 확인합니다. 검사 통과 후 FastAPI 이미지 하나만
+업로드하고, 기존 `news-feed`의 `fastapi` 컨테이너 이미지만 갱신합니다.
+Nginx와 서비스 설정은 유지하며, 프록시·화면 연동은 별도 확인합니다.
+백엔드 이미지는 공개한 릴리스 태그의 커밋으로 빌드합니다.
+최초 구성·동시 배포 주의사항·롤백은 [배포 안내](../../README.md#cloud-run-배포)를 따릅니다.
 
 ## 충돌과 후속 수정
 
@@ -126,7 +129,7 @@ GitHub의 `main` 보호 규칙과 필수 체크가 실제로 켜져 있는지는
   실패했다면 태그 커밋의 `main` 푸시 CI 성공을 확인하고 해당 CD 실행을 다시 실행합니다.
 - **GCP 인증이나 업로드 실패** — `GCP_SA_KEY`, 대상 프로젝트·리전, Artifact Registry
   저장소, 배포 계정의 권한을 확인합니다.
-- **Cloud SQL 접속 실패** — `CLOUD_SQL_INSTANCE`, 실행 계정 권한, Secret 참조와 DB
-  사용자 설정을 확인합니다.
+- **Cloud SQL 접속 실패** — 기존 Cloud Run 서비스의 Cloud SQL 연결, 실행 계정 권한,
+  Secret 참조와 DB 사용자 설정을 확인합니다. 현재 CD는 이 설정들을 변경하지 않습니다.
 - **PR 머지 또는 이슈 닫힘 실패** — Draft 상태, 승인, 대화 해결, 필수 체크와
   `Closes #이슈번호`를 확인합니다.

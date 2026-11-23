@@ -4,16 +4,35 @@ DB 백업 파일은 로컬에만 보관하며 Git에서 제외합니다. 이 폴
 공유합니다. 복원할 백업은 별도로 전달받아 `exports/`에 넣어야 하며, 아래 파일명과
 데이터 건수는 기존에 보관한 백업에 대한 설명입니다.
 
-기존 백엔드 Nginx 파일은 `exports/nginx/`에 로컬 참고용으로 옮겼으며 Git에서
-제외합니다. Nginx를 경유하던 이전 검사 스크립트도
-`exports/nginx/scripts/smoke-containers.sh`에 보관합니다. 현재 CI/CD는
-`.github/scripts/smoke-containers.sh`로 FastAPI만 검사합니다.
-Nginx 빌드가 포함된 기존 CI 원본은 `exports/nginx/workflow/ci.yml`에 보관합니다.
-현재 사용하는 `.github/workflows/ci.yml`은 FastAPI만 검사하는 수정본입니다.
+## 백업 확보와 보존 책임
 
-## reader_id 변경 후 최신 백업
+- 기존 백업과 로컬 이미지의 보관 담당은 백엔드 담당자 태원(`taewonkim2`)입니다.
+  새 환경에서 복원이 필요하면 담당자에게 필요한 날짜의 DB 백업과 이미지 폴더를
+  함께 요청합니다. 백업의 이미지 URL에 맞는 경로 구조도 전달받습니다.
+- **[미정]** 팀 공용 백업 저장 위치와 전달 채널은 아직 확정하지 않았습니다.
+  Git clone만으로 아래 백업이나 이미지가 준비되지는 않습니다.
+- DB 덤프 5개의 Git 추적 제외는 로컬 백업을 소스와 분리하려는 정리입니다.
+  로컬 파일 삭제나 과거 Git 이력 삭제를 의미하지 않습니다. 배포 분리와는 별개의
+  정리이며, 이번 문서 수정에서 PR을 분리하거나 이력을 재작성하지 않았습니다.
+- 덤프에 독자 ID·좋아요 이력이 포함될 수 있습니다. 바이너리 내용의 민감 정보
+  검사를 완료한 것으로 표시하지 않으며, 과거 이력 정리와 공유 범위는 팀에서
+  확인·결정해야 합니다.
 
-`newsdb_2026-11-04_reader_id.dump`는 reader_id 컬럼으로 통일한 최신 전체 DB 백업입니다.
+## 이전 Nginx 구성 참조
+
+작성자 PC에만 있는 보관본 대신, 저장소 접근 권한이 있는 팀원은 다음 고정 커밋의
+파일을 확인할 수 있습니다. 현재 checkout에서 그대로 실행되는 구성은 아닙니다.
+
+- [이전 Nginx 파일](https://github.com/asac-news-rec/backend/tree/54317e07df0dc8076c2949f8d66d0368bbdd4af6/nginx)
+- [이전 Nginx·FastAPI 검사 스크립트](https://github.com/asac-news-rec/backend/blob/54317e07df0dc8076c2949f8d66d0368bbdd4af6/.github/scripts/smoke-containers.sh)
+- [이전 CI 워크플로](https://github.com/asac-news-rec/backend/blob/54317e07df0dc8076c2949f8d66d0368bbdd4af6/.github/workflows/ci.yml)
+
+현재 CI/CD의 `.github/scripts/smoke-containers.sh`는 FastAPI만 검사합니다.
+현재 로컬 실행과 프론트 연동은 [백엔드 README](../README.md#로컬-화면썸네일-연동)를 따릅니다.
+
+## reader_id 변경 후 백업 (기존 보관본)
+
+`newsdb_2026-11-04_reader_id.dump`는 reader_id 컬럼으로 통일한 시점의 전체 DB 백업입니다.
 기사 250건, 좋아요 12건, 변경 이력 24건을 포함합니다. 테이블이 없는 빈 DB에는 아래 백업을 선택하세요.
 
 ```bash
