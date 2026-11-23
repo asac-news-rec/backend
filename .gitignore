@@ -34,5 +34,9 @@ __pycache__/
 output/
 catboost_info/
 
+# DB 백업은 로컬에만 보관하고 복원 안내만 공유합니다.
+/exports/*
+!/exports/README.md
+
 # Study documents are not part of this repository import
 /docs/

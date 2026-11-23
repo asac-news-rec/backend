@@ -72,11 +72,10 @@ jobs:
         with:
           persist-credentials: false
 
-      # Cloud Run 배포와 같은 Dockerfile 및 플랫폼으로 두 이미지를 빌드한다.
-      - name: Build FastAPI and Nginx images
+      # 백엔드가 배포할 FastAPI 이미지만 빌드한다.
+      - name: Build FastAPI image
         run: |
           docker build --platform linux/amd64 -t news-feed:pr-check .
-          docker build --platform linux/amd64 -f nginx/Dockerfile -t news-web:pr-check .
 
-      - name: Check the FastAPI response through Nginx
-        run: bash .github/scripts/smoke-containers.sh news-feed:pr-check news-web:pr-check
+      - name: Check the FastAPI response
+        run: bash .github/scripts/smoke-containers.sh news-feed:pr-check

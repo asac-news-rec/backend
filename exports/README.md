@@ -1,5 +1,16 @@
 # 기사 DB 백업 복원 안내
 
+DB 백업 파일은 로컬에만 보관하며 Git에서 제외합니다. 이 폴더에서는 이 README만
+공유합니다. 복원할 백업은 별도로 전달받아 `exports/`에 넣어야 하며, 아래 파일명과
+데이터 건수는 기존에 보관한 백업에 대한 설명입니다.
+
+기존 백엔드 Nginx 파일은 `exports/nginx/`에 로컬 참고용으로 옮겼으며 Git에서
+제외합니다. Nginx를 경유하던 이전 검사 스크립트도
+`exports/nginx/scripts/smoke-containers.sh`에 보관합니다. 현재 CI/CD는
+`.github/scripts/smoke-containers.sh`로 FastAPI만 검사합니다.
+Nginx 빌드가 포함된 기존 CI 원본은 `exports/nginx/workflow/ci.yml`에 보관합니다.
+현재 사용하는 `.github/workflows/ci.yml`은 FastAPI만 검사하는 수정본입니다.
+
 ## reader_id 변경 후 최신 백업
 
 `newsdb_2026-11-04_reader_id.dump`는 reader_id 컬럼으로 통일한 최신 전체 DB 백업입니다.
