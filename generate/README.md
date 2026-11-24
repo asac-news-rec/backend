@@ -43,7 +43,7 @@ docker run --rm \
 
 DB 적재 시 `--write-db`, `--date`, `--run-id`, `--image-base-url`과 DB 접속 환경변수가 필요합니다. 대상 DB에는 테이블이 사전 준비돼 있어야 합니다.
 
-GKE에서는 `PGPASSWORD_SECRET=projects/final-project-513508/secrets/news-db-password/versions/latest`를 전달합니다. 생성기가 Google 공식 Secret Manager SDK와 ADC 인증으로 비밀번호를 읽어 프로세스의 `PGPASSWORD`에 설정합니다. Pod 서비스 계정의 Workload Identity 연결과 해당 Secret에 대한 `roles/secretmanager.secretAccessor` 권한이 필요합니다. Secret 경로를 지정하면 기존 `PGPASSWORD`보다 우선합니다. 로컬에서는 `PGPASSWORD`를 직접 설정할 수 있습니다. Secret 읽기 실패 시 DB 적재 전에 오류로 종료합니다.
+GKE에서는 `PGPASSWORD_SECRET=projects/final-project-513508/secrets/news-db-password/versions/latest`를 전달합니다. 생성기가 Google 공식 Secret Manager SDK와 ADC 인증으로 비밀번호를 읽고 `.strip()`으로 앞뒤 공백·줄바꿈을 제거한 뒤 프로세스의 `PGPASSWORD`에 설정합니다. 비밀번호 중간의 공백은 유지합니다. Pod 서비스 계정의 Workload Identity 연결과 해당 Secret에 대한 `roles/secretmanager.secretAccessor` 권한이 필요합니다. Secret 경로를 지정하면 기존 `PGPASSWORD`보다 우선합니다. 로컬에서는 `PGPASSWORD`를 직접 설정할 수 있습니다. Secret 읽기 실패 시 DB 적재 전에 오류로 종료합니다.
 
 [현재] JSONL·PNG는 지정 폴더에 저장합니다. `--thumbnail-bucket` 또는 `THUMBNAIL_BUCKET`을 지정하면 이미지가 있는 기사에서 PNG를 GCS에 업로드한 뒤 DB에 적재합니다. JSONL 백업은 PVC에 유지합니다.
 

@@ -126,3 +126,34 @@ def test_generation_failure_exits_without_cleanup(monkeypatch, cli):
     with pytest.raises(SystemExit) as error:
         generator.main()
     assert error.value.code == 1
+
+
+@pytest.mark.parametrize("secret", ["db pass", " \tdb pass\r\n"])
+def test_cli_strips_secret_password_before_generation(monkeypatch, cli, secret):
+    import os
+    import sys
+
+    monkeypatch.setattr(sys, "argv", [
+        *sys.argv, "--write-db", "--date", "2026-11-24",
+        "--run-id", "test-secret-password",
+        "--image-base-url", "https://example.com/images",
+    ])
+    for name, value in {
+        "PGHOST": "test-db", "PGPORT": "5432", "PGDATABASE": "test-db",
+        "PGUSER": "test-user", "PGPASSWORD": "old-password",
+        "PGPASSWORD_SECRET": "test-secret-resource",
+    }.items():
+        monkeypatch.setenv(name, value)
+
+    def read_secret(resource):
+        assert resource == "test-secret-resource"
+        return secret
+
+    def generate(*args, **kwargs):
+        # DB 연결에 쓰이는 환경변수를 확인하고 비밀번호 중간의 공백은 유지합니다.
+        assert os.environ["PGPASSWORD"] == "db pass"
+        return cli / "articles-test.jsonl"
+
+    monkeypatch.setattr(generator, "read_secret", read_secret)
+    monkeypatch.setattr(generator, "generate", generate)
+    assert generator.main() is None
