@@ -341,7 +341,7 @@ def main():
         if not api_key:
             raise ValueError("OPENROUTER_API_KEY 또는 OPENROUTER_API_KEY_SECRET을 설정하세요.")
         if args.write_db and os.environ.get("PGPASSWORD_SECRET"):
-            os.environ["PGPASSWORD"] = read_secret(os.environ["PGPASSWORD_SECRET"])
+            os.environ["PGPASSWORD"] = read_secret(os.environ["PGPASSWORD_SECRET"]).strip()
         image_base_url = validate_image_base_url(args.image_base_url) if args.write_db else None
         with requests.Session() as session:
             session.headers["Authorization"] = f"Bearer {api_key}"
