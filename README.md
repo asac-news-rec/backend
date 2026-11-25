@@ -110,7 +110,13 @@ FastAPI의 PostgreSQL 접속 사용자의 `INSERT` 권한 부여를 요청합니
 현재 CI/CD는 운영 테이블 생성과 권한 부여를 자동 실행하지 않습니다.
 
 `POST /v1/news/feed`는 반환 기사마다 같은 응답의 ID·순서·시각을 사용해
-로그를 저장합니다. `score`, `model_version`, `features_as_of`는 현재 `NULL`입니다.
+로그를 저장합니다. `INFERENCE_URL`이 비어 있으면 최신순으로 응답하고
+`score`, `model_version`, `features_as_of`는 `NULL`입니다. `INFERENCE_URL`이 있으면
+추론 서버 `POST /v1/rank`(타임아웃 0.5초)로 한 페이지 안의 순서를 바꾸고 `score`와
+`model_version`을 저장합니다. 호출에 실패하면 최신순으로 응답하고 `model_version`은
+`fallback`입니다. `features_as_of`는 추론 서버가 실제 피처 시각을 줄 때까지 `NULL`입니다.
+다음 페이지 커서는 추천 순서가 아니라 최신순 기준입니다.
+롤백은 `INFERENCE_URL`을 비웁니다.
 저장과 커밋이 성공하면 피드를 반환하고, DB 오류가 발생하면 기사 목록 대신
 HTTP 503과 `뉴스 전송내역 저장에 실패하였습니다.`를 반환합니다.
 이 로그는 서버 반환 기록이며 브라우저의 실제 수신·화면 노출을 보장하지 않습니다.

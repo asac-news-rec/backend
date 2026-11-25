@@ -200,9 +200,9 @@ def save_news_impressions(
          item['article_id'],
          item['position'],
          response['served_at'],
-         None,
-         None,
-         None
+         item.get('score'),
+         item.get('model_version'),
+         item.get('features_as_of')
          )
          for item in response['items']
     ]

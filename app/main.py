@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from itsdangerous import BadData, URLSafeTimedSerializer
 from psycopg_pool import PoolTimeout
 from .db import connect, database_pool
+from .inference import rerank
 # 반환 로그 구현은 루트 logging/에 보관합니다. 아래는 기존 연결 코드입니다.
 # from .logging.feed_log import prepare_log_directory, write_feed_log
 
@@ -248,13 +249,12 @@ def build_feed_response(body: FeedRequest, reader_id: str):
             detail="뉴스조회에 실패하였습니다.",
         ) from exc
 
-    for position, item in enumerate(items, start=returned_count + 1):
-        item["impression_id"] = str(uuid7())
-        item["position"] = position
+    request_id = str(uuid7())
+    served_at = datetime.now(timezone.utc).isoformat()
 
     next_cursor = None
     if has_more:
-        # 실제 응답에 포함된 마지막 기사부터 다음 페이지를 이어 간다.
+        # 커서는 DB 조회 순서(최신순)의 마지막 기사다. 추천 순서로 바꾸기 전에 정해야 다음 페이지가 겹치지 않는다.
         last_item = items[-1]
         next_cursor = FeedCursor(
             published_at=last_item["published_at"],
@@ -262,9 +262,14 @@ def build_feed_response(body: FeedRequest, reader_id: str):
             returned_count=returned_count + len(items),
         )
 
+    items = rerank(items, request_id, reader_id, served_at)
+    for position, item in enumerate(items, start=returned_count + 1):
+        item["impression_id"] = str(uuid7())
+        item["position"] = position
+
     response = {
-        "request_id": str(uuid7()),
-        "served_at": datetime.now(timezone.utc).isoformat(),
+        "request_id": request_id,
+        "served_at": served_at,
         "items": items,
         "next_cursor": next_cursor,
     }
