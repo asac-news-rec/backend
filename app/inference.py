@@ -7,7 +7,7 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-TIMEOUT_SECONDS = 0.5
+TIMEOUT_SECONDS = 0.5  # 연결과 읽기에 각각 적용된다(전체 상한이 아니다)
 
 
 def inference_url() -> str:
@@ -33,12 +33,19 @@ def request_rank(url: str, request_id: str, reader_id: str, article_ids: list[st
         ranked_ids = [item["article_id"] for item in body["ranked"]]
         if len(set(ranked_ids)) != len(ranked_ids) or not set(ranked_ids) <= set(article_ids):
             raise ValueError("ranked에 중복이나 보내지 않은 기사가 있다")
-        if not all(math.isfinite(item["pctr"]) for item in body["ranked"]):
-            raise ValueError("pctr이 유한한 수가 아니다")
+        if [item["rank"] for item in body["ranked"]] != list(range(1, len(ranked_ids) + 1)):
+            raise ValueError("ranked가 rank 순서가 아니다")
+        for item in body["ranked"]:
+            pctr = item["pctr"]
+            if isinstance(pctr, bool) or not isinstance(pctr, (int, float)):
+                raise ValueError("pctr이 숫자가 아니다")
+            item["pctr"] = float(pctr)
+            if not math.isfinite(item["pctr"]):
+                raise ValueError("pctr이 유한한 수가 아니다")
         if not isinstance(body["model_version"], str):
             raise ValueError("model_version이 문자열이 아니다")
         return body
-    except (requests.RequestException, ValueError, KeyError, TypeError) as exc:
+    except (requests.RequestException, ValueError, KeyError, TypeError, OverflowError) as exc:
         logger.warning("추론 서버 호출 실패, 최신순으로 대신한다: %s", exc)
         return None
 

@@ -112,7 +112,7 @@ FastAPI의 PostgreSQL 접속 사용자의 `INSERT` 권한 부여를 요청합니
 `POST /v1/news/feed`는 반환 기사마다 같은 응답의 ID·순서·시각을 사용해
 로그를 저장합니다. `INFERENCE_URL`이 비어 있으면 최신순으로 응답하고
 `score`, `model_version`, `features_as_of`는 `NULL`입니다. `INFERENCE_URL`이 있으면
-추론 서버 `POST /v1/rank`(타임아웃 0.5초)로 한 페이지 안의 순서를 바꾸고 `score`와
+추론 서버 `POST /v1/rank`(연결·읽기 타임아웃 각각 0.5초)로 한 페이지 안의 순서를 바꾸고 `score`와
 `model_version`을 저장합니다. 호출에 실패하면 최신순으로 응답하고 `model_version`은
 `fallback`입니다. `features_as_of`는 추론 서버가 실제 피처 시각을 줄 때까지 `NULL`입니다.
 다음 페이지 커서는 추천 순서가 아니라 최신순 기준입니다.

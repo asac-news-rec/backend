@@ -59,6 +59,11 @@ def test_rerank_orders_by_rank_and_appends_unscored(monkeypatch):
     FakeResponse(ranked(("x", 0.1))),
     FakeResponse(ranked(("a", 0.2), ("a", 0.1))),
     FakeResponse(ranked(("a", float("nan")))),
+    FakeResponse(ranked(("a", True))),
+    FakeResponse(ranked(("a", "0.1"))),
+    FakeResponse(ranked(("a", 10 ** 400))),
+    FakeResponse({"model_version": "pctr@7", "ranked": [
+        {"article_id": "a", "pctr": 0.1, "rank": 2}, {"article_id": "b", "pctr": 0.2, "rank": 1}]}),
 ])
 def test_rerank_falls_back_to_latest_order(monkeypatch, response):
     items, _ = run(monkeypatch, response)

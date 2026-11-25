@@ -73,6 +73,12 @@ class FakeConnection:
         return self.cursor().execute(sql, params)
 
 
+@pytest.fixture(autouse=True)
+def no_inference_server(monkeypatch):
+    """로컬 .env의 INFERENCE_URL 때문에 테스트가 실제 추론 서버를 부르지 않게 한다."""
+    monkeypatch.delenv("INFERENCE_URL", raising=False)
+
+
 @pytest.fixture
 def fake_db(monkeypatch):
     """app.main.connect()가 FakeConnection을 돌려주도록 바꾼다."""
